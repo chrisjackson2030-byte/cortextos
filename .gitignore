@@ -30,6 +30,9 @@ agents/*/memory/
 # macOS metadata
 .DS_Store
 
+# Obsidian vault config (B-local, not for repo)
+**/.obsidian/
+
 # Test artifacts
 test-results/
 *.log

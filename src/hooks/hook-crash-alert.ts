@@ -19,8 +19,11 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 const DEDUP_WINDOW_MS = 10 * 60 * 1000;         // 10 minutes
-const QUIET_HOUR_START_LA = 22;                 // 22:00 America/Los_Angeles
-const QUIET_HOUR_END_LA = 7;                    // 07:00 America/Los_Angeles
+
+// Fallback quiet hours if org context is unavailable (22:00-07:00 LA).
+const FALLBACK_QUIET_START = 22;
+const FALLBACK_QUIET_END = 7;
+const FALLBACK_TZ = 'America/Los_Angeles';
 
 // End types that are routine and should be suppressed during quiet hours.
 // "crash" is deliberately NOT in this list — a genuine unexpected crash at
@@ -35,16 +38,42 @@ const QUIET_SUPPRESSED_TYPES = new Set([
   'rate-limited',
 ]);
 
-function isQuietHoursLA(now: Date): boolean {
-  const laString = now.toLocaleString('en-US', {
-    timeZone: 'America/Los_Angeles',
-    hour12: false,
-  });
-  const m = laString.match(/\d+\/\d+\/\d+,?\s+(\d+):/);
+interface QuietConfig { start: number; end: number; tz: string; }
+
+// Read quiet hours from org context.json (day_mode_end → quiet start,
+// day_mode_start → quiet end, timezone → timezone).
+// Falls back to hardcoded LA defaults if context is unavailable.
+function getQuietConfig(): QuietConfig {
+  const defaults: QuietConfig = { start: FALLBACK_QUIET_START, end: FALLBACK_QUIET_END, tz: FALLBACK_TZ };
+  const frameworkRoot = process.env.CTX_FRAMEWORK_ROOT;
+  const org = process.env.CTX_ORG;
+  if (!frameworkRoot || !org) return defaults;
+  try {
+    const ctxPath = join(frameworkRoot, 'orgs', org, 'context.json');
+    if (!existsSync(ctxPath)) return defaults;
+    const ctx = JSON.parse(readFileSync(ctxPath, 'utf-8')) as Record<string, unknown>;
+    const tz = (ctx.timezone as string | undefined) || FALLBACK_TZ;
+    // day_mode_end = when B stops working = start of quiet window
+    // day_mode_start = when B starts working = end of quiet window
+    const [quietStart] = ((ctx.day_mode_end as string | undefined) || '22:00').split(':').map(Number);
+    const [quietEnd] = ((ctx.day_mode_start as string | undefined) || '07:00').split(':').map(Number);
+    return { start: quietStart, end: quietEnd, tz };
+  } catch {
+    return defaults;
+  }
+}
+
+function isQuietHours(now: Date, cfg: QuietConfig): boolean {
+  const locString = now.toLocaleString('en-US', { timeZone: cfg.tz, hour12: false });
+  const m = locString.match(/\d+\/\d+\/\d+,?\s+(\d+):/);
   if (!m) return false;
   const hour = parseInt(m[1], 10);
-  // Window wraps midnight: 22:00-23:59 OR 00:00-06:59
-  return hour >= QUIET_HOUR_START_LA || hour < QUIET_HOUR_END_LA;
+  if (cfg.start < cfg.end) {
+    // Simple range (e.g. 02:00-08:00 — no midnight wrap)
+    return hour >= cfg.start && hour < cfg.end;
+  }
+  // Wraps midnight (e.g. 22:00-07:00)
+  return hour >= cfg.start || hour < cfg.end;
 }
 
 /**
@@ -122,10 +151,6 @@ async function main(): Promise<void> {
     { file: '.user-restart', type: 'user-restart' },
     { file: '.user-disable', type: 'user-disable' },
     { file: '.user-stop', type: 'user-stop' },
-    // .daemon-crashed wins over .daemon-stop when both are present — a crash
-    // during shutdown is the more important signal. Written by the daemon's
-    // uncaughtException handler in src/daemon/index.ts.
-    { file: '.daemon-crashed', type: 'daemon-crashed' },
     { file: '.daemon-stop', type: 'daemon-stop' },
   ];
 
@@ -185,7 +210,7 @@ async function main(): Promise<void> {
 
   // Decide whether to actually send to Telegram.
   const now = new Date();
-  const quiet = isQuietHoursLA(now);
+  const quiet = isQuietHours(now, getQuietConfig());
   if (quiet && QUIET_SUPPRESSED_TYPES.has(endType)) {
     return;
   }
@@ -221,16 +246,6 @@ async function main(): Promise<void> {
     case 'daemon-stop':
       message = `🛑 ${agentName} stopped (daemon shutdown).`;
       if (reason) message += ` (${reason})`;
-      break;
-    case 'daemon-crashed':
-      // Deliberately NOT suppressed during quiet hours — a daemon crash at
-      // 3am is genuinely worth waking for (historically it has preceded
-      // fleet-wide restart storms). Crash-loop alerts from the daemon
-      // itself add operator-level urgency; this is the per-agent variant
-      // that replaces the misleading "🚨 agent crashed" message users
-      // were getting on every daemon respawn.
-      message = `🚨 ${agentName} — daemon crashed, session was interrupted. Resuming.`;
-      if (reason) message += `\nCrash time: ${reason}`;
       break;
     case 'rate-limited':
       message = `⏳ ${agentName} paused — Anthropic rate limit hit. Will resume when the window resets.`;
