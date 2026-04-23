@@ -81,8 +81,8 @@ function makeRequest(url: string): NextRequest {
 describe('GET /api/comms/feed', () => {
   it('returns messages from history log sorted newest-first', async () => {
     writeHistory([
-      { id: 'm1', from: 'boris', to: 'nick', priority: 'normal', timestamp: '2026-04-15T09:00:00Z', text: 'hello', reply_to: null },
-      { id: 'm2', from: 'nick', to: 'boris', priority: 'normal', timestamp: '2026-04-15T10:00:00Z', text: 'world', reply_to: null },
+      { id: 'm1', from: 'boris', to: 'nick', priority: 'normal', timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(), text: 'hello', reply_to: null },
+      { id: 'm2', from: 'nick', to: 'boris', priority: 'normal', timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(), text: 'world', reply_to: null },
     ]);
 
     const res = await feed.GET(makeRequest('/api/comms/feed'));
@@ -123,9 +123,11 @@ describe('GET /api/comms/feed', () => {
 // ---------------------------------------------------------------------------
 describe('GET /api/comms/channels', () => {
   it('groups messages by pair and reports last-message metadata', async () => {
+    const recentBase = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const recentLater = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     writeHistory([
-      { id: 'm1', from: 'boris', to: 'nick', priority: 'normal', timestamp: '2026-04-15T09:00:00Z', text: 'hi', reply_to: null },
-      { id: 'm2', from: 'nick', to: 'boris', priority: 'normal', timestamp: '2026-04-15T10:00:00Z', text: 'reply', reply_to: null },
+      { id: 'm1', from: 'boris', to: 'nick', priority: 'normal', timestamp: recentBase, text: 'hi', reply_to: null },
+      { id: 'm2', from: 'nick', to: 'boris', priority: 'normal', timestamp: recentLater, text: 'reply', reply_to: null },
     ]);
 
     const res = await channels.GET(makeRequest('/api/comms/channels'));
