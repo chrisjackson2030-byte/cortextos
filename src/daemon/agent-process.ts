@@ -750,6 +750,10 @@ export class AgentProcess {
     const GAP_MULTIPLIER = 2.0;            // nudge when gap > 2x expected interval
 
     const stateDir = join(this.env.ctxRoot, 'state', this.name);
+    // Track when each cron was last nudged. After sending a nudge, reset the
+    // effective baseline to now so the next alert can't fire until another full
+    // 2x interval has elapsed — even if cron-state.json has no fire record yet.
+    const lastNudgedAt = new Map<string, number>();
 
     // Initial wait — give the agent time to boot and register crons before first check
     await sleep(GAP_POLL_MS);
@@ -778,6 +782,10 @@ export class AgentProcess {
           lastFireMs = Math.max(lastFireMs, loopStartedAt);
         }
 
+        // After a nudge, use the nudge time as the baseline so subsequent polls
+        // don't immediately re-alert before the agent has had a chance to act.
+        lastFireMs = Math.max(lastFireMs, lastNudgedAt.get(cronDef.name) ?? 0);
+
         const gapMs = now - lastFireMs;
         const threshold = intervalMs * GAP_MULTIPLIER;
 
@@ -789,6 +797,7 @@ export class AgentProcess {
             : `If missing, restore it from config.json using the cron expression in your config.`;
           const nudge = `[SYSTEM] Cron gap detected for "${cronDef.name}": last fired ${gapMin} minutes ago (expected every ${expectedMin} minutes). Run CronList to verify the cron is still active. ${restoreHint}`;
 
+          lastNudgedAt.set(cronDef.name, now);
           this.log(`Gap nudge: ${cronDef.name} silent ${gapMin}min (threshold: ${Math.round(threshold / 60_000)}min)`);
           if (this.pty && this.status === 'running') {
             injectMessage((data) => this.pty?.write(data), nudge);
