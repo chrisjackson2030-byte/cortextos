@@ -110,6 +110,10 @@ export class AgentPTY {
       }
     }
 
+    // Prevent Claude Code from silently upgrading to the 1M context window
+    // (which caused unexpected billing in CC v2.1.51/v2.1.112 on Max plans).
+    ptyEnv['CLAUDE_CODE_DISABLE_1M_CONTEXT'] = '1';
+
     // Add convenience CTX_* aliases used throughout agent templates.
     // CTX_TELEGRAM_CHAT_ID: alias for CHAT_ID from the agent's .env
     if (ptyEnv['CHAT_ID']) {
