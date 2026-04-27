@@ -36,6 +36,7 @@ const QUIET_SUPPRESSED_TYPES = new Set([
   'user-disable',
   'user-stop',
   'rate-limited',
+  'compaction',
 ]);
 
 interface QuietConfig { start: number; end: number; tz: string; }
@@ -158,15 +159,35 @@ async function main(): Promise<void> {
     { file: '.daemon-stop', type: 'daemon-stop' },
   ];
 
+  let markerFresh = false;
+
   for (const marker of markers) {
     const markerPath = join(stateDir, marker.file);
     if (existsSync(markerPath)) {
-      endType = marker.type;
-      try {
-        reason = readFileSync(markerPath, 'utf-8').trim();
-        unlinkSync(markerPath);
-      } catch { /* ignore */ }
-      break;
+      if (endType === 'crash') {
+        endType = marker.type;
+        try {
+          reason = readFileSync(markerPath, 'utf-8').trim();
+          if (Date.now() - statSync(markerPath).mtimeMs < 60_000) markerFresh = true;
+        } catch { /* ignore */ }
+      }
+      try { unlinkSync(markerPath); } catch { /* ignore */ }
+    }
+  }
+
+  // Compaction detection: if no fresh marker was found, check whether the
+  // parent process (Claude Code) is still alive. A stale marker or no marker
+  // + alive parent = auto-compaction firing SessionEnd without a real exit.
+  // Fresh markers (< 60s) are trusted — they indicate an intentional event
+  // in progress (real restart, user stop, etc.) where the parent hasn't
+  // fully exited yet.
+  if (!markerFresh && endType !== 'compaction') {
+    try {
+      process.kill(process.ppid, 0);
+      endType = 'compaction';
+      reason = 'parent process alive — internal auto-compaction, not a real exit';
+    } catch {
+      // Parent is dead — this is a real exit. Trust the classification.
     }
   }
 
@@ -263,6 +284,8 @@ async function main(): Promise<void> {
       break;
     case 'rate-limited':
       message = `⏳ ${agentName} paused — Anthropic rate limit hit. Will resume when the window resets.`;
+      break;
+    case 'compaction':
       break;
     case 'crash':
       message = `🚨 CRASH: ${agentName} died unexpectedly.`;
