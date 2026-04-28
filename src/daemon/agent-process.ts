@@ -8,7 +8,7 @@ import { MessageDedup, injectMessage } from '../pty/inject.js';
 import { ensureDir } from '../utils/atomic.js';
 import { writeCortextosEnv } from '../utils/env.js';
 import { getOverdueReminders } from '../bus/reminders.js';
-import { readCronState, parseDurationMs, cronExpressionMinIntervalMs } from '../bus/cron-state.js';
+import { readCronState, updateCronFire, parseDurationMs, cronExpressionMinIntervalMs } from '../bus/cron-state.js';
 import { resolvePaths } from '../utils/paths.js';
 
 type LogFn = (msg: string) => void;
@@ -248,6 +248,9 @@ export class AgentProcess {
    */
   async sessionRefresh(): Promise<void> {
     this.log('Session refresh (--continue restart)');
+    const stateDir = join(this.env.ctxRoot, 'state', this.name);
+    ensureDir(stateDir);
+    writeFileSync(join(stateDir, '.session-refresh'), new Date().toISOString(), 'utf-8');
     await this.stop();
     await this.start();
     this.log('Session refreshed');
@@ -735,6 +738,21 @@ export class AgentProcess {
 
     const generation = this.lifecycleGeneration;
     const loopStartedAt = Date.now();
+
+    // Seed cron-state.json for any crons that have no record yet.
+    // Without seeding, the gap detector treats all crons as stale since
+    // daemon boot, fires false nudges every 10 min, and those nudges
+    // monopolize PTY turns — starving CronCreate daily crons of firing
+    // windows (Bug #4: morning brief 30 min late for 5 consecutive days).
+    const stateDir = join(this.env.ctxRoot, 'state', this.name);
+    const existingState = readCronState(stateDir);
+    for (const cronDef of monitorable) {
+      const hasRecord = existingState.crons.some(r => r.name === cronDef.name);
+      if (!hasRecord) {
+        updateCronFire(stateDir, cronDef.name, cronDef.interval);
+        this.log(`Seeded cron-state for "${cronDef.name}" (no prior record)`);
+      }
+    }
 
     this.runGapDetectionLoop(monitorable, generation, loopStartedAt).catch(err => {
       this.log(`Cron gap detection failed (non-fatal): ${err}`);
