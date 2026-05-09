@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   total_output_tokens  INTEGER DEFAULT 0,
   total_cache_read     INTEGER DEFAULT 0,
   total_cache_created  INTEGER DEFAULT 0,
-  retention_tier       TEXT DEFAULT 'full'
+  retention_tier            TEXT NOT NULL DEFAULT 'full',
+  retention_tier_changed_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_name);
@@ -106,8 +107,6 @@ CREATE TABLE IF NOT EXISTS turns (
   role          TEXT NOT NULL,
   timestamp     TEXT NOT NULL,
   content_text  TEXT,
-  thinking_text TEXT,
-  has_thinking  INTEGER DEFAULT 0,
   has_tool_use  INTEGER DEFAULT 0,
   stop_reason   TEXT,
   input_tokens  INTEGER,
@@ -151,6 +150,21 @@ CREATE TABLE IF NOT EXISTS tool_results (
 CREATE INDEX IF NOT EXISTS idx_tool_results_use_id ON tool_results(tool_use_id);
 
 -- =========================================================================
+-- Thinking blocks extracted from assistant messages
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS thinking_blocks (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  turn_id          INTEGER NOT NULL REFERENCES turns(id),
+  session_id       TEXT NOT NULL REFERENCES sessions(session_id),
+  sequence_in_turn INTEGER NOT NULL,
+  content          TEXT NOT NULL,
+  indexed_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_thinking_turn ON thinking_blocks(turn_id);
+CREATE INDEX IF NOT EXISTS idx_thinking_session ON thinking_blocks(session_id);
+
+-- =========================================================================
 -- Entities (populated by Phase 5 second-pass extractor)
 -- =========================================================================
 CREATE TABLE IF NOT EXISTS entities (
@@ -171,7 +185,6 @@ CREATE INDEX IF NOT EXISTS idx_entities_value ON entities(entity_value);
 -- =========================================================================
 CREATE VIRTUAL TABLE IF NOT EXISTS turns_fts USING fts5(
   content_text,
-  thinking_text,
   content='turns',
   content_rowid='id',
   tokenize='porter unicode61'
@@ -184,12 +197,23 @@ CREATE VIRTUAL TABLE IF NOT EXISTS tools_fts USING fts5(
   tokenize='porter unicode61'
 );
 
+CREATE VIRTUAL TABLE IF NOT EXISTS thinking_fts USING fts5(
+  content,
+  content='thinking_blocks',
+  content_rowid='id',
+  tokenize='porter unicode61'
+);
+
 -- =========================================================================
 -- FTS sync triggers
 -- =========================================================================
 CREATE TRIGGER IF NOT EXISTS turns_ai AFTER INSERT ON turns BEGIN
-  INSERT INTO turns_fts(rowid, content_text, thinking_text)
-    VALUES (new.id, new.content_text, new.thinking_text);
+  INSERT INTO turns_fts(rowid, content_text)
+    VALUES (new.id, new.content_text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS thinking_blocks_ai AFTER INSERT ON thinking_blocks BEGIN
+  INSERT INTO thinking_fts(rowid, content) VALUES (new.id, new.content);
 END;
 
 CREATE TRIGGER IF NOT EXISTS tool_calls_ai AFTER INSERT ON tool_calls BEGIN

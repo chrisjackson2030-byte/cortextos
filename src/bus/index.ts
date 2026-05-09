@@ -57,3 +57,15 @@ export {
   type UpstreamResult,
   type RegisterCommandsResult,
 } from './metrics.js';
+export {
+  indexSessions,
+  searchSessions,
+  listSessions,
+  type IndexOptions,
+  type IndexStats,
+  type SearchOptions,
+  type SearchResult,
+  type ContextTurn,
+  type SessionListOptions,
+  type SessionRow,
+} from './indexer.js';

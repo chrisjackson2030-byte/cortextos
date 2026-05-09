@@ -76,6 +76,15 @@ export type JsonlLineType =
   | 'last-prompt';
 
 /**
+ * A single thinking block extracted from an assistant message.  Stored in
+ * the `thinking_blocks` table by the indexer.
+ */
+export interface ExtractedThinkingBlock {
+  sequence_in_turn: number;
+  content: string;
+}
+
+/**
  * A tool call extracted from an assistant message.  Stored in the
  * `tool_calls` table by the indexer.
  */
@@ -115,10 +124,8 @@ export interface ParsedLine {
   timestamp: string;
   /** Concatenated plain text content (searchable). */
   contentText: string | null;
-  /** Concatenated thinking block text (Decision #1). */
-  thinkingText: string | null;
-  /** Whether any thinking blocks were present. */
-  hasThinking: boolean;
+  /** Thinking blocks (one entry per block, preserving order). */
+  thinkingBlocks: ExtractedThinkingBlock[];
   /** Whether any tool_use blocks were present. */
   hasToolUse: boolean;
   /** Stop reason from the API response (assistant lines only). */
@@ -266,8 +273,7 @@ export function parseLine(
   const message = parsed.message;
 
   let contentText: string | null = null;
-  let thinkingText: string | null = null;
-  let hasThinking = false;
+  const thinkingBlocks: ExtractedThinkingBlock[] = [];
   let hasToolUse = false;
   let stopReason: string | null = null;
   let tokenUsage: TokenUsage | null = null;
@@ -317,14 +323,15 @@ export function parseLine(
       const content = message.content;
       if (Array.isArray(content)) {
         const textParts: string[] = [];
-        const thinkingParts: string[] = [];
 
         for (const block of content) {
           if (block.type === 'text' && block.text) {
             textParts.push(block.text);
           } else if (block.type === 'thinking' && block.thinking) {
-            hasThinking = true;
-            thinkingParts.push(block.thinking);
+            thinkingBlocks.push({
+              sequence_in_turn: thinkingBlocks.length,
+              content: block.thinking,
+            });
           } else if (block.type === 'tool_use') {
             hasToolUse = true;
             toolCalls.push({
@@ -338,9 +345,6 @@ export function parseLine(
         if (textParts.length > 0) {
           contentText = textParts.join('\n');
         }
-        if (thinkingParts.length > 0) {
-          thinkingText = thinkingParts.join('\n');
-        }
       }
     }
   }
@@ -352,8 +356,7 @@ export function parseLine(
     role,
     timestamp,
     contentText,
-    thinkingText,
-    hasThinking,
+    thinkingBlocks,
     hasToolUse,
     stopReason,
     tokenUsage,
