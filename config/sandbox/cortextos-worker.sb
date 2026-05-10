@@ -1,0 +1,79 @@
+; cortextOS Worker Session Sandbox Profile
+; Agent types: ephemeral workers spawned via `cortextos spawn-worker`
+;
+; Required parameters (-D flags):
+;   TASK_DIR         — worker's task/scratch directory
+;   CTX_ROOT         — cortextOS state root
+;   HOME_DIR         — user home
+;   DAEMON_SOCK      — daemon socket path
+;
+;   Per-agent deny params (deny reads from all persistent agent dirs):
+;   DENY_AGENT_1 through DENY_AGENT_4 — agent dirs to deny (same as specialist)
+;
+; Workers are the most restricted profile:
+;   - No Telegram polling (no bot token injected)
+;   - HTTP (port 80) excluded — HTTPS only
+;   - Write scope: TASK_DIR + CTX_ROOT (result delivery) only
+;   - Read denies for all persistent agent dirs (workers cannot read org memory)
+
+(version 1)
+(deny default)
+
+; ── Process infrastructure ──────────────────────────────────────────────────
+(allow process-fork)
+(allow process-exec)
+(allow signal)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow mach-register)
+(allow ipc-posix-sem)
+(allow ipc-posix-shm)
+(allow ipc-posix-shm-read-data)
+(allow ipc-posix-shm-write-data)
+(allow file-ioctl)
+(allow iokit-open)
+
+; ── File reads — broad allow, deny persistent agent dirs ────────────────────
+(allow file-read* (subpath "/"))
+
+; Deny reads from all persistent agent dirs
+(deny file-read* (subpath (param "DENY_AGENT_1")))
+(deny file-read* (subpath (param "DENY_AGENT_2")))
+(deny file-read* (subpath (param "DENY_AGENT_3")))
+(deny file-read* (subpath (param "DENY_AGENT_4")))
+
+; ── File writes — task scope only ───────────────────────────────────────────
+(allow file-write* (subpath (param "TASK_DIR")))
+(allow file-write* (subpath (param "CTX_ROOT")))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (literal "/dev/null"))
+(allow file-read*  (literal "/dev/null"))
+(allow file-write* (literal "/dev/stderr"))
+(allow file-write* (literal "/dev/stdout"))
+
+; PTY
+(allow file-read*  (literal "/dev/ptmx"))
+(allow file-write* (literal "/dev/ptmx"))
+(allow file-read*  (regex #"^/dev/ttys[0-9]+"))
+(allow file-write* (regex #"^/dev/ttys[0-9]+"))
+
+; ── Process execution ────────────────────────────────────────────────────────
+(allow process-exec
+    (subpath "/bin")
+    (subpath "/usr/bin")
+    (subpath "/sbin")
+    (subpath "/usr/sbin")
+    (subpath "/opt/homebrew/bin")
+    (subpath (string-append (param "HOME_DIR") "/.local/bin")))
+
+; ── Network — HTTPS + DNS only (no HTTP for workers) ────────────────────────
+(allow network-outbound
+    (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+(allow network-outbound
+    (remote tcp4 "*:443")
+    (remote tcp6 "*:443"))
+
+; ── Daemon IPC socket ────────────────────────────────────────────────────────
+(allow network-outbound
+    (remote unix-socket (path-literal (param "DAEMON_SOCK"))))

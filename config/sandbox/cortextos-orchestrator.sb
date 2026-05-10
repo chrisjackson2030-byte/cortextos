@@ -1,0 +1,87 @@
+; cortextOS Orchestrator Agent Sandbox Profile
+; Agent types: jarvis (and future orchestrators)
+;
+; Required parameters (-D flags):
+;   AGENT_DIR        — orchestrator working dir, e.g. /Users/x/cortextos/orgs/main/agents/jarvis
+;   CTX_ROOT         — cortextOS state root, e.g. /Users/x/.cortextos/default
+;   HOME_DIR         — user home, e.g. /Users/x
+;   CLAUDE_PROJ_DIR  — Claude project dir for this agent
+;   DAEMON_SOCK      — daemon socket path
+;
+; No DENY_AGENT_* params needed — orchestrator reads all agent dirs for fleet management.
+;
+; Differences from specialist:
+;   + No sibling agent read denies (orchestrator needs fleet-wide read for dispatch)
+;   + Write still restricted to own AGENT_DIR + CTX_ROOT (no writes to other agents' dirs)
+;   + Local dashboard ports allowed (fleet health checks)
+;
+; Isolation guarantees:
+;   ALLOW  — file reads anywhere (broad, same as specialist)
+;   ALLOW  — file writes within own AGENT_DIR + CTX_ROOT + CLAUDE_PROJ_DIR
+;   DENY   — writes to other agents' dirs (not in write allowlist → denied by default)
+;   ALLOW  — HTTPS + HTTP outbound + DNS + local dashboard ports
+;   ALLOW  — daemon IPC socket
+
+(version 1)
+(deny default)
+
+; ── Process infrastructure ──────────────────────────────────────────────────
+(allow process-fork)
+(allow process-exec)
+(allow signal)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow mach-register)
+(allow ipc-posix-sem)
+(allow ipc-posix-shm)
+(allow ipc-posix-shm-read-data)
+(allow ipc-posix-shm-write-data)
+(allow file-ioctl)
+(allow iokit-open)
+
+; ── File reads — broad allow, no sibling denies for orchestrator ─────────────
+(allow file-read* (subpath "/"))
+
+; ── File writes — own scope only ────────────────────────────────────────────
+(allow file-write* (subpath (param "AGENT_DIR")))
+(allow file-write* (subpath (param "CTX_ROOT")))
+(allow file-write* (subpath (param "CLAUDE_PROJ_DIR")))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (literal "/dev/null"))
+(allow file-read*  (literal "/dev/null"))
+(allow file-write* (literal "/dev/stderr"))
+(allow file-write* (literal "/dev/stdout"))
+
+; PTY
+(allow file-read*  (literal "/dev/ptmx"))
+(allow file-write* (literal "/dev/ptmx"))
+(allow file-read*  (regex #"^/dev/ttys[0-9]+"))
+(allow file-write* (regex #"^/dev/ttys[0-9]+"))
+
+; ── Process execution ────────────────────────────────────────────────────────
+(allow process-exec
+    (subpath "/bin")
+    (subpath "/usr/bin")
+    (subpath "/sbin")
+    (subpath "/usr/sbin")
+    (subpath "/opt/homebrew/bin")
+    (subpath (string-append (param "HOME_DIR") "/.local/bin")))
+
+; ── Network ─────────────────────────────────────────────────────────────────
+(allow network-outbound
+    (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+(allow network-outbound
+    (remote tcp4 "*:443")
+    (remote tcp6 "*:443"))
+(allow network-outbound
+    (remote tcp4 "*:80")
+    (remote tcp6 "*:80"))
+; Local dashboard access
+(allow network-outbound
+    (remote tcp4 "localhost:3000")
+    (remote tcp4 "localhost:8080"))
+
+; ── Daemon IPC socket ────────────────────────────────────────────────────────
+(allow network-outbound
+    (remote unix-socket (path-literal (param "DAEMON_SOCK"))))
