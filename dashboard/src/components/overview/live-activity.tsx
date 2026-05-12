@@ -12,8 +12,8 @@ import {
   IconPlayerPlay,
   IconRobot,
 } from '@tabler/icons-react';
-import { formatDistanceToNow } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TimeAgo } from '@/components/shared/time-ago';
 import { useSSE } from '@/hooks/use-sse';
 import { displayAgentName } from '@/lib/utils';
 import type { Event, SSEEvent } from '@/lib/types';
@@ -33,14 +33,6 @@ const EVENT_TYPE_ICONS: Record<string, React.ReactNode> = {
 
 const FILTER_TYPES = ['all', 'task', 'action', 'heartbeat', 'message'] as const;
 type FilterType = typeof FILTER_TYPES[number];
-
-function formatEventTime(timestamp: string): string {
-  try {
-    return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
-  } catch {
-    return 'unknown';
-  }
-}
 
 interface DisplayEvent {
   id: string;
@@ -218,9 +210,7 @@ export function LiveActivity({ initialEvents }: LiveActivityProps) {
                   </span>
                 )}
                 <span className="truncate flex-1 text-xs">{event.message}</span>
-                <span className="shrink-0 text-[10px] font-mono text-muted-foreground" suppressHydrationWarning>
-                  {formatEventTime(event.timestamp)}
-                </span>
+                <TimeAgo date={event.timestamp} className="shrink-0 text-[10px] font-mono text-muted-foreground" />
               </div>
             ))
           )}

@@ -71,7 +71,10 @@ export default async function OverviewPage({
   // Filter stub/inactive agents from fleet display
   const visibleAgents = agents.filter(a => !a.name.startsWith('_'));
 
-  const staleAgentCount = healthSummary.stale + healthSummary.down;
+  const staleAgentCount = healthSummary.agents
+    .filter(a => !a.agent.startsWith('_'))
+    .filter(a => a.health === 'stale' || a.health === 'down')
+    .length;
   const inProgressTaskList = allTasks.filter(t => t.status === 'in_progress');
   const inProgressTasks = inProgressTaskList.length;
   const pendingTasks = allTasks.filter(t => t.status === 'pending').length;
@@ -87,21 +90,24 @@ export default async function OverviewPage({
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight">Command Center</h1>
-            <span className="flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success border border-success/20">
+            <h1 className="text-2xl font-bold tracking-tight dark:text-foreground">
+              <span className="dark:text-primary dark:drop-shadow-[0_0_8px_oklch(0.72_0.18_210/0.6)]">⬡</span>
+              {' '}Command Center
+            </h1>
+            <span className="flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success border border-success/20 dark:arc-pulse dark:shadow-[0_0_6px_oklch(0.65_0.19_160/0.4)]">
               <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
               LIVE
             </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {healthSummary.healthy} agent{healthSummary.healthy !== 1 ? 's' : ''} online
-            {inProgressTasks > 0 && ` · ${inProgressTasks} task${inProgressTasks !== 1 ? 's' : ''} in progress`}
+          <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+            {healthSummary.healthy}/{healthSummary.healthy + healthSummary.stale + healthSummary.down} agents online
+            {inProgressTasks > 0 && ` · ${inProgressTasks} active`}
             {org ? ` · ${org}` : ''}
           </p>
         </div>
         {totalActions > 0 && (
           <Link
-            href="/approvals"
+            href={pendingCount > 0 ? '/approvals' : staleAgentCount > 0 ? '/agents' : blockedTasks.length > 0 ? '/tasks?status=blocked' : '/tasks?agent=human'}
             className="flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors cursor-pointer border border-destructive/20"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
