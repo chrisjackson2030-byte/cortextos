@@ -8,7 +8,8 @@ import { OrgBadge } from '@/components/shared/org-badge';
 import { RuntimeBadge } from '@/components/shared/runtime-badge';
 import { AgentAvatar } from '@/components/shared/agent-avatar';
 import { AgentActions } from './agent-actions';
-import { IconChecklist } from '@tabler/icons-react';
+import { IconChecklist, IconClock } from '@tabler/icons-react';
+import { cn } from '@/lib/utils';
 import type { AgentRuntime, HealthStatus } from '@/lib/types';
 
 export interface AgentCardData {
@@ -20,12 +21,23 @@ export interface AgentCardData {
   role: string;
   health: HealthStatus;
   currentTask?: string;
+  taskUpdatedAt?: string;
   tasksToday: number;
   runtime?: AgentRuntime;
 }
 
 interface AgentCardProps {
   agent: AgentCardData;
+}
+
+function formatDuration(isoTimestamp: string): string {
+  const elapsed = Date.now() - new Date(isoTimestamp).getTime();
+  const totalMin = Math.floor(elapsed / 60000);
+  if (totalMin < 1) return '<1m';
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
 export function AgentCard({ agent }: AgentCardProps) {
@@ -37,7 +49,12 @@ export function AgentCard({ agent }: AgentCardProps) {
 
   return (
     <Link href={`/agents/${encodeURIComponent(agent.systemName)}/chat`}>
-      <Card className="group relative h-full cursor-pointer transition-all hover:shadow-md hover:border-primary/20">
+      <Card className={cn(
+        "group relative h-full cursor-pointer transition-all hover:shadow-md",
+        agent.health === 'healthy' && "agent-card-healthy border-success/35",
+        agent.health === 'stale' && "agent-card-stale border-warning/35",
+        agent.health === 'down' && "border-destructive/25",
+      )}>
         <CardContent className="space-y-3">
           {/* Header: avatar + name + health */}
           <div className="flex items-start justify-between">
@@ -77,7 +94,15 @@ export function AgentCard({ agent }: AgentCardProps) {
           {/* Current task */}
           {agent.currentTask ? (
             <div className="rounded-md bg-muted/40 px-2.5 py-2">
-              <p className="text-[11px] text-muted-foreground mb-0.5">Working on</p>
+              <div className="flex items-center justify-between mb-0.5">
+                <p className="text-[11px] text-muted-foreground">Working on</p>
+                {agent.taskUpdatedAt && (
+                  <span className="flex items-center gap-1 text-[10px] font-mono text-primary/70">
+                    <IconClock size={10} />
+                    {formatDuration(agent.taskUpdatedAt)}
+                  </span>
+                )}
+              </div>
               <p className="text-xs leading-snug line-clamp-2">
                 {agent.currentTask.replace(/^WORKING ON:\s*/i, '')}
               </p>

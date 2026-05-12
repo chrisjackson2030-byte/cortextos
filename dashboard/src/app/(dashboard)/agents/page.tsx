@@ -14,17 +14,21 @@ export default async function AgentsPage({
 
   const raw = await discoverAgents(orgFilter);
 
-  const agents: AgentCardData[] = raw.map((a) => ({
-    name: a.name,
-    systemName: (a as unknown as Record<string, string>).systemName ?? a.name,
-    org: a.org,
-    emoji: (a as unknown as Record<string, string>).emoji ?? '',
-    role: (a as unknown as Record<string, string>).role ?? '',
-    health: a.health,
-    currentTask: a.currentTask,
-    tasksToday: (a as unknown as Record<string, number>).tasksToday ?? 0,
-    runtime: a.runtime,
-  }));
+  const agents: AgentCardData[] = raw.map((a) => {
+    const extra = a as unknown as Record<string, unknown>;
+    return {
+      name: a.name,
+      systemName: (extra.systemName as string) ?? a.name,
+      org: a.org,
+      emoji: (extra.emoji as string) ?? '',
+      role: (extra.role as string) ?? '',
+      health: a.health,
+      currentTask: a.currentTask,
+      taskUpdatedAt: (extra.taskUpdatedAt as string) ?? undefined,
+      tasksToday: (extra.tasksToday as number) ?? 0,
+      runtime: a.runtime,
+    };
+  });
 
   return (
     <div className="space-y-6">

@@ -110,6 +110,11 @@ export function getFleetHealth(org: string): FleetHealth | null {
     message_bus?: { inbox: number; inflight: number; processed: number };
   };
 
+  // If health snapshot exists but has no agents data, fall back to live heartbeats
+  if (!healthData.agents || Object.keys(healthData.agents).length === 0) {
+    return getFleetHealthFromHeartbeats(org);
+  }
+
   const agents: FleetHealthAgent[] = [];
   let totalStability = 0;
   let staleCount = 0;

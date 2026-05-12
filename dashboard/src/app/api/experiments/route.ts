@@ -115,13 +115,18 @@ function scanExperiments(): AgentExperiments[] {
         }
       }
 
-      // Also include active experiment if not already in history
+      // Include active experiment — replace history entry if IDs match (history may be stale)
       const activeExpPath = path.join(expDir, 'active.json');
       if (fs.existsSync(activeExpPath)) {
         try {
           const activeExp = JSON.parse(fs.readFileSync(activeExpPath, 'utf-8'));
-          if (activeExp?.id && !experiments.some(e => e.id === activeExp.id)) {
-            experiments.unshift(activeExp);
+          if (activeExp?.id) {
+            const existingIdx = experiments.findIndex(e => e.id === activeExp.id);
+            if (existingIdx >= 0) {
+              experiments[existingIdx] = activeExp; // Replace stale history with live active data
+            } else {
+              experiments.unshift(activeExp);
+            }
           }
         } catch { /* skip */ }
       }

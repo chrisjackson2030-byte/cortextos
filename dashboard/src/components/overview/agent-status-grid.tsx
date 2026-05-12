@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HealthDot } from '@/components/shared/health-dot';
 import { IconRobot, IconChevronRight } from '@tabler/icons-react';
+import { cn } from '@/lib/utils';
 import type { AgentSummary, Heartbeat } from '@/lib/types';
 import { displayAgentName } from '@/lib/utils';
 
@@ -39,7 +40,12 @@ export function AgentStatusGrid({ agents, heartbeats }: AgentStatusGridProps) {
               <Link
                 key={systemName}
                 href={`/agents/${encodeURIComponent(systemName)}`}
-                className="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50 transition-colors"
+                className={cn(
+                  "group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50 transition-colors border-l-2",
+                  agent.health === 'healthy' ? "border-l-success/60" :
+                  agent.health === 'stale' ? "border-l-warning/60" :
+                  "border-l-destructive/40",
+                )}
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-sm">
                   {agent.emoji || displayAgentName(agent.name).charAt(0)}

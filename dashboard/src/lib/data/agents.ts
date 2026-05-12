@@ -143,11 +143,13 @@ export async function discoverAgents(org?: string): Promise<AgentSummary[]> {
 
       // Get tasks for today count and current task
       let currentTask: string | undefined;
+      let taskUpdatedAt: string | undefined;
       let tasksToday = 0;
       try {
         const agentTasks = getTasksByAgent(agent.name, agent.org);
         const inProgress = agentTasks.find((t) => t.status === 'in_progress');
         currentTask = inProgress?.title ?? hb?.current_task ?? undefined;
+        taskUpdatedAt = inProgress?.updated_at ?? undefined;
 
         const todayStart = new Date();
         todayStart.setUTCHours(0, 0, 0, 0);
@@ -165,6 +167,7 @@ export async function discoverAgents(org?: string): Promise<AgentSummary[]> {
         emoji: string;
         role: string;
         tasksToday: number;
+        taskUpdatedAt?: string;
       } = {
         systemName: agent.name,
         name: identity.name,
@@ -172,6 +175,7 @@ export async function discoverAgents(org?: string): Promise<AgentSummary[]> {
         health,
         lastHeartbeat: hb?.last_heartbeat,
         currentTask,
+        taskUpdatedAt,
         emoji: identity.emoji,
         role: identity.role,
         tasksToday,
