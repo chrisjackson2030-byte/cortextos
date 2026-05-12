@@ -5,9 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HealthDot } from '@/components/shared/health-dot';
 import { IconRobot, IconChevronRight } from '@tabler/icons-react';
 import type { AgentSummary, Heartbeat } from '@/lib/types';
+import { displayAgentName } from '@/lib/utils';
 
 interface AgentStatusGridProps {
-  agents: (AgentSummary & { emoji?: string })[];
+  agents: (AgentSummary & { emoji?: string; systemName?: string })[];
   heartbeats: Record<string, Heartbeat>;
 }
 
@@ -27,7 +28,8 @@ export function AgentStatusGrid({ agents, heartbeats }: AgentStatusGridProps) {
           </p>
         ) : (
           agents.map((agent) => {
-            const hb = heartbeats[agent.name];
+            const systemName = agent.systemName ?? agent.name;
+            const hb = heartbeats[systemName];
             const currentTask = hb?.current_task || '';
             const taskPreview = currentTask
               .replace(/^WORKING ON:\s*/i, '')
@@ -35,17 +37,17 @@ export function AgentStatusGrid({ agents, heartbeats }: AgentStatusGridProps) {
 
             return (
               <Link
-                key={agent.name}
-                href={`/agents/${encodeURIComponent(agent.name)}`}
+                key={systemName}
+                href={`/agents/${encodeURIComponent(systemName)}`}
                 className="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-sm">
-                  {agent.emoji || agent.name.charAt(0).toUpperCase()}
+                  {agent.emoji || displayAgentName(agent.name).charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">
-                      {agent.name}
+                    <span className="text-sm font-medium font-mono truncate">
+                      {displayAgentName(agent.name)}
                     </span>
                     <HealthDot status={agent.health} />
                   </div>

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { OrgSelector } from './org-selector';
+import { AgentStatusBar } from './agent-status-bar';
 
 interface TopbarProps {
   orgs: string[];
@@ -48,11 +49,15 @@ export function Topbar({ orgs, currentOrg, onOrgChange, onMenuClick }: TopbarPro
             <IconMenu2 size={18} />
           </Button>
         )}
+        <div className="hidden items-center gap-2 pr-2 text-sm font-semibold sm:flex">
+          <span>cortextOS</span>
+        </div>
         <OrgSelector orgs={orgs} currentOrg={currentOrg} onOrgChange={onOrgChange} />
       </div>
 
-      {/* Right: Dark mode toggle + User menu */}
-      <div className="flex items-center gap-1">
+      {/* Right: Status bar + Dark mode toggle + User menu */}
+      <div className="flex items-center gap-2">
+        <AgentStatusBar />
         <Button
           variant="ghost"
           size="icon"

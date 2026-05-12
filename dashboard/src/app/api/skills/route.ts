@@ -45,28 +45,64 @@ function getInstalledAgents(frameworkRoot: string, slug: string): string[] {
 export async function GET() {
   try {
     const frameworkRoot = getFrameworkRoot();
-    const catalogDir = path.join(frameworkRoot, 'skills');
 
-    if (!fs.existsSync(catalogDir)) {
-      return Response.json([]);
+    // slug -> { content, installedFor }
+    const skillMap = new Map<string, { content: string; installedFor: string[] }>();
+
+    // 1. Scan central catalog skills/
+    const catalogDir = path.join(frameworkRoot, 'skills');
+    if (fs.existsSync(catalogDir)) {
+      for (const entry of fs.readdirSync(catalogDir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        const slug = entry.name;
+        const skillMd = path.join(catalogDir, slug, 'SKILL.md');
+        const readme = path.join(catalogDir, slug, 'README.md');
+        let content = '';
+        if (fs.existsSync(skillMd)) content = fs.readFileSync(skillMd, 'utf-8');
+        else if (fs.existsSync(readme)) content = fs.readFileSync(readme, 'utf-8');
+        const installedFor = getInstalledAgents(frameworkRoot, slug);
+        skillMap.set(slug, { content, installedFor });
+      }
     }
 
-    const entries = fs.readdirSync(catalogDir, { withFileTypes: true });
+    // 2. Scan agent .claude/skills/ directories for skills not in central catalog
+    const orgsDir = path.join(frameworkRoot, 'orgs');
+    if (fs.existsSync(orgsDir)) {
+      for (const orgEntry of fs.readdirSync(orgsDir, { withFileTypes: true })) {
+        if (!orgEntry.isDirectory()) continue;
+        const agentsDir = path.join(orgsDir, orgEntry.name, 'agents');
+        if (!fs.existsSync(agentsDir)) continue;
+        for (const agentEntry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+          if (!agentEntry.isDirectory()) continue;
+          const claudeSkillsDir = path.join(agentsDir, agentEntry.name, '.claude', 'skills');
+          if (!fs.existsSync(claudeSkillsDir)) continue;
+          for (const skillEntry of fs.readdirSync(claudeSkillsDir, { withFileTypes: true })) {
+            if (!skillEntry.isDirectory() || skillEntry.name.startsWith('.')) continue;
+            const slug = skillEntry.name;
+            const agentId = `${orgEntry.name}/${agentEntry.name}`;
+            if (skillMap.has(slug)) {
+              // Merge installedFor if not already present
+              const existing = skillMap.get(slug)!;
+              if (!existing.installedFor.includes(agentId)) {
+                existing.installedFor.push(agentId);
+              }
+            } else {
+              // New skill only found in agent dirs — read its SKILL.md
+              const skillMd = path.join(claudeSkillsDir, slug, 'SKILL.md');
+              const readme = path.join(claudeSkillsDir, slug, 'README.md');
+              let content = '';
+              if (fs.existsSync(skillMd)) content = fs.readFileSync(skillMd, 'utf-8');
+              else if (fs.existsSync(readme)) content = fs.readFileSync(readme, 'utf-8');
+              skillMap.set(slug, { content, installedFor: [agentId] });
+            }
+          }
+        }
+      }
+    }
+
     const skills = [];
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-      const slug = entry.name;
-      const skillMd = path.join(catalogDir, slug, 'SKILL.md');
-      const readme = path.join(catalogDir, slug, 'README.md');
-
-      let content = '';
-      if (fs.existsSync(skillMd)) content = fs.readFileSync(skillMd, 'utf-8');
-      else if (fs.existsSync(readme)) content = fs.readFileSync(readme, 'utf-8');
-
+    for (const [slug, { content, installedFor }] of skillMap) {
       const { name, description } = parseSkillMd(content);
-      const installedFor = getInstalledAgents(frameworkRoot, slug);
-
       skills.push({
         slug,
         name: name || slug,

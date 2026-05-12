@@ -195,6 +195,12 @@ export interface AgentConfig {
    * poller will be skipped regardless.
    */
   telegram_polling?: boolean;
+  /**
+   * Path to sandbox-exec Seatbelt profile (.sb file).
+   * When set, agent is launched via `sandbox-exec -f <profile> [params]`.
+   * macOS only. Absent = no sandboxing (existing behaviour preserved).
+   */
+  sandbox_profile?: string;
 }
 
 export interface CronEntry {

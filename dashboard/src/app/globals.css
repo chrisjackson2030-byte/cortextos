@@ -208,45 +208,155 @@ tr:hover td {
 }
 
 /* ============================================
-   cortextOS Gold/Mustard Theme - Dark Mode
+   cortextOS Iron Man / Jarvis Theme - Dark Mode
    ============================================ */
 .dark {
-  --background: oklch(0.145 0 0);               /* #0F0F0F */
-  --foreground: oklch(0.975 0.005 80);           /* #F8F7F4 */
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.975 0.005 80);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.975 0.005 80);
-  --primary: oklch(0.762 0.125 82);              /* #D4AF37 - gold for dark mode */
-  --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.187 0 0);                 /* #1A1A1A */
-  --secondary-foreground: oklch(0.975 0.005 80);
-  --muted: oklch(0.187 0 0);                    /* #1A1A1A */
-  --muted-foreground: oklch(0.6 0 0);
-  --accent: oklch(0.618 0.13 75);               /* #B8860B */
-  --accent-foreground: oklch(0.975 0.005 80);
-  --destructive: oklch(0.704 0.191 22.216);
+  --background: oklch(0.098 0.018 255);          /* #0A0E17 — deep void black-blue */
+  --foreground: oklch(0.92 0.008 210);           /* #E8F4F8 — cold white */
+  --card: oklch(0.148 0.018 255);                /* #131929 — dark metallic panel */
+  --card-foreground: oklch(0.92 0.008 210);
+  --popover: oklch(0.148 0.018 255);
+  --popover-foreground: oklch(0.92 0.008 210);
+  --primary: oklch(0.72 0.18 210);               /* #00C8FF — arc reactor cyan */
+  --primary-foreground: oklch(0.05 0.01 255);    /* near-black on cyan */
+  --secondary: oklch(0.18 0.02 255);
+  --secondary-foreground: oklch(0.92 0.008 210);
+  --muted: oklch(0.19 0.016 255);
+  --muted-foreground: oklch(0.56 0.015 225);     /* #7BA7C0 — muted steel blue */
+  --accent: oklch(0.23 0.018 255);               /* hover/active surface */
+  --accent-foreground: oklch(0.92 0.008 210);
+  --destructive: oklch(0.65 0.22 25);            /* #FF4444 — arc alert red */
   --destructive-foreground: oklch(1 0 0);
-  --success: oklch(0.555 0.17 145);
-  --success-foreground: oklch(1 0 0);
-  --warning: oklch(0.72 0.17 75);
-  --warning-foreground: oklch(0.187 0 0);
-  --border: oklch(0.25 0.015 60);               /* #2A2520 */
-  --input: oklch(0.25 0.015 60);
-  --ring: oklch(0.762 0.125 82);
-  --chart-1: oklch(0.762 0.125 82);
-  --chart-2: oklch(0.546 0.2 262);
-  --chart-3: oklch(0.507 0.22 293);
-  --chart-4: oklch(0.543 0.22 340);
-  --chart-5: oklch(0.555 0.17 160);
-  --sidebar: oklch(0.187 0 0);
-  --sidebar-foreground: oklch(0.975 0.005 80);
-  --sidebar-primary: oklch(0.762 0.125 82);
-  --sidebar-primary-foreground: oklch(0.975 0.005 80);
-  --sidebar-accent: oklch(0.25 0.015 60);
-  --sidebar-accent-foreground: oklch(0.975 0.005 80);
-  --sidebar-border: oklch(0.25 0.015 60);
-  --sidebar-ring: oklch(0.762 0.125 82);
+  --success: oklch(0.65 0.19 160);              /* #00E5A0 — reactor green */
+  --success-foreground: oklch(0.05 0.01 255);
+  --warning: oklch(0.78 0.16 66);               /* #FFB300 — amber warning */
+  --warning-foreground: oklch(0.05 0.01 255);
+  --border: oklch(0.28 0.025 220);              /* #1E3A4A — cyan-tinted metallic border */
+  --input: oklch(0.22 0.02 240);
+  --ring: oklch(0.72 0.18 210);                 /* arc reactor cyan ring */
+  --chart-1: oklch(0.72 0.18 210);             /* cyan — primary */
+  --chart-2: oklch(0.65 0.19 160);             /* green */
+  --chart-3: oklch(0.78 0.16 66);              /* amber */
+  --chart-4: oklch(0.65 0.22 25);              /* red */
+  --chart-5: oklch(0.62 0.2 285);             /* indigo accent */
+  --sidebar: oklch(0.118 0.02 255);            /* sidebar darker than bg */
+  --sidebar-foreground: oklch(0.92 0.008 210);
+  --sidebar-primary: oklch(0.72 0.18 210);     /* cyan nav highlights */
+  --sidebar-primary-foreground: oklch(0.05 0.01 255);
+  --sidebar-accent: oklch(0.22 0.018 255);
+  --sidebar-accent-foreground: oklch(0.92 0.008 210);
+  --sidebar-border: oklch(0.22 0.022 230);
+  --sidebar-ring: oklch(0.72 0.18 210);
+}
+
+/* ============================================
+   HUD Panel System — Iron Man aesthetic
+   ============================================ */
+
+/* Arc reactor glow on primary elements */
+.dark [data-slot="card"] {
+  border-color: oklch(0.28 0.025 220);
+  background: linear-gradient(
+    135deg,
+    oklch(0.155 0.018 255) 0%,
+    oklch(0.138 0.016 255) 100%
+  );
+}
+
+/* HUD corner bracket decoration */
+.hud-panel {
+  position: relative;
+}
+.hud-panel::before,
+.hud-panel::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: oklch(0.72 0.18 210 / 0.6);
+  border-style: solid;
+  pointer-events: none;
+}
+.hud-panel::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+}
+.hud-panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 2px 2px 0;
+}
+
+/* Arc reactor glow effect */
+.arc-glow {
+  box-shadow: 0 0 12px oklch(0.72 0.18 210 / 0.35), 0 0 32px oklch(0.72 0.18 210 / 0.1);
+}
+
+/* Scanning line animation for HUD panels */
+@keyframes hud-scan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 0.4; }
+  90% { opacity: 0.4; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+.hud-scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    oklch(0.72 0.18 210 / 0.06) 50%,
+    transparent 100%
+  );
+  animation: hud-scan 4s ease-in-out infinite;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Metallic text for key data values */
+.dark .font-mono {
+  color: oklch(0.86 0.04 210);
+}
+
+/* Status indicator — arc reactor pulse */
+@keyframes arc-pulse {
+  0%, 100% { box-shadow: 0 0 4px oklch(0.72 0.18 210 / 0.8); }
+  50% { box-shadow: 0 0 12px oklch(0.72 0.18 210 / 0.4), 0 0 24px oklch(0.72 0.18 210 / 0.2); }
+}
+.arc-pulse {
+  animation: arc-pulse 2s ease-in-out infinite;
+}
+
+/* Sidebar: subtle vertical scan line */
+.dark aside {
+  border-right: 1px solid oklch(0.28 0.025 220);
+  background: linear-gradient(
+    180deg,
+    oklch(0.118 0.02 255) 0%,
+    oklch(0.108 0.018 255) 100%
+  );
+}
+
+/* Input focus: arc reactor glow */
+.dark input:focus,
+.dark textarea:focus {
+  box-shadow: 0 0 0 2px oklch(0.72 0.18 210 / 0.3), 0 0 8px oklch(0.72 0.18 210 / 0.15);
+  border-color: oklch(0.72 0.18 210 / 0.5);
+}
+
+/* Primary button: arc reactor styling */
+.dark [data-slot="button"][data-variant="default"],
+.dark button.bg-primary {
+  background: linear-gradient(135deg, oklch(0.72 0.18 210) 0%, oklch(0.62 0.2 220) 100%);
+  box-shadow: 0 0 8px oklch(0.72 0.18 210 / 0.3);
+}
+
+/* Table header: metallic */
+.dark thead tr {
+  background: oklch(0.16 0.02 255);
+  border-bottom: 1px solid oklch(0.28 0.025 220);
 }
 
 @keyframes pulse-dot {
@@ -254,6 +364,12 @@ tr:hover td {
   50% { opacity: 0.5; }
 }
 .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+@keyframes value-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-value-in { animation: value-in 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 
 @layer base {
   * {

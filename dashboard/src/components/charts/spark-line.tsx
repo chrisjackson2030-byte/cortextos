@@ -10,7 +10,7 @@ import { CHART_GOLD } from './chart-theme';
 export interface SparkLineProps {
   data: number[];
   color?: string;
-  width?: number;
+  width?: number | string;
   height?: number;
   className?: string;
 }

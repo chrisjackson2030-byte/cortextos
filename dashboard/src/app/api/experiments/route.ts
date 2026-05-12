@@ -115,6 +115,17 @@ function scanExperiments(): AgentExperiments[] {
         }
       }
 
+      // Also include active experiment if not already in history
+      const activeExpPath = path.join(expDir, 'active.json');
+      if (fs.existsSync(activeExpPath)) {
+        try {
+          const activeExp = JSON.parse(fs.readFileSync(activeExpPath, 'utf-8'));
+          if (activeExp?.id && !experiments.some(e => e.id === activeExp.id)) {
+            experiments.unshift(activeExp);
+          }
+        } catch { /* skip */ }
+      }
+
       // Sort by created_at descending
       experiments.sort(
         (a, b) =>

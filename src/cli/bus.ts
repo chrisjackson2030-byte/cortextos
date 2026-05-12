@@ -18,6 +18,7 @@ import { updateCronFire, parseDurationMs, readCronState } from '../bus/cron-stat
 import { addCron, removeCron, readCrons, updateCron as updateCronDef, getCronByName, getExecutionLog } from '../bus/crons.js';
 import { nextFireFromCron } from '../daemon/cron-scheduler.js';
 import { queryKnowledgeBase, ingestKnowledgeBase, ensureKBDirs } from '../bus/knowledge-base.js';
+import { indexSessions, searchSessions, listSessions, getSessionContext } from '../bus/indexer.js';
 import { checkUsageApi, refreshOAuthToken, rotateOAuth, loadAccounts, ALERT_5H, ALERT_7D } from '../bus/oauth.js';
 import { resolvePaths } from '../utils/paths.js';
 import { resolveEnv } from '../utils/env.js';
@@ -2712,6 +2713,217 @@ busCommand
     if (!opts.dryRun && patched > 0) {
       console.log('\nRestart affected agents to apply the new settings:');
       console.log('  cortextos restart <agent-name>');
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// transcript indexer commands
+// ---------------------------------------------------------------------------
+
+busCommand
+  .command('index-sessions')
+  .description('Index JSONL session transcripts into the SQLite search index')
+  .option('--agent <name>', 'Index only sessions for this agent')
+  .option('--session <uuid>', 'Index only a specific session UUID')
+  .option('--force', 'Force full reindex even for unchanged files')
+  .action(async (opts: { agent?: string; session?: string; force?: boolean }) => {
+    const env = resolveEnv();
+    const instanceId = env.instanceId || 'default';
+    try {
+      const stats = await indexSessions(instanceId, {
+        agent: opts.agent,
+        session: opts.session,
+        force: opts.force,
+      });
+      console.log(`Indexed ${stats.sessions} session(s) in ${stats.durationMs}ms`);
+      console.log(`  Turns: ${stats.turns}  Tool calls: ${stats.toolCalls}  Tool results: ${stats.toolResults}  Thinking blocks: ${stats.thinkingBlocks}`);
+      if (stats.scrubMatches > 0) console.log(`  Scrub redactions: ${stats.scrubMatches}`);
+      if (stats.skipped > 0) console.log(`  Skipped (unchanged): ${stats.skipped}`);
+      if (stats.errors.length > 0) {
+        console.error(`  Errors (${stats.errors.length}):`);
+        for (const e of stats.errors) console.error(`    ${e}`);
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(`index-sessions failed: ${String(err)}`);
+      process.exit(1);
+    }
+  });
+
+busCommand
+  .command('search-sessions')
+  .description('Full-text search across indexed session transcripts')
+  .argument('<query>', 'Search query (FTS5 syntax supported)')
+  .option('--agent <name>', 'Scope search to a specific agent')
+  .option('--after <iso>', 'Only turns at or after this ISO 8601 timestamp')
+  .option('--before <iso>', 'Only turns at or before this ISO 8601 timestamp')
+  .option('--role <role>', 'Filter by role: user or assistant')
+  .option('--tools-only', 'Search tool call inputs only')
+  .option('--thinking-only', 'Search thinking block content only')
+  .option('--top-k <n>', 'Max results to return (default: 10)', '10')
+  .option('--context <n>', 'Surrounding turns to include (default: 2)', '2')
+  .option('--json', 'Output raw JSON')
+  .action((query: string, opts: { agent?: string; after?: string; before?: string; role?: string; toolsOnly?: boolean; thinkingOnly?: boolean; topK?: string; context?: string; json?: boolean }) => {
+    const env = resolveEnv();
+    const instanceId = env.instanceId || 'default';
+    try {
+      const results = searchSessions(instanceId, query, {
+        agent: opts.agent,
+        after: opts.after,
+        before: opts.before,
+        role: opts.role as 'user' | 'assistant' | undefined,
+        toolsOnly: opts.toolsOnly,
+        thinkingOnly: opts.thinkingOnly,
+        topK: parseInt(opts.topK ?? '10', 10),
+        contextWindow: parseInt(opts.context ?? '2', 10),
+      });
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log('No results found.');
+        return;
+      }
+
+      for (const r of results) {
+        console.log(`\n[${r.role.toUpperCase()}] ${r.timestamp} — ${r.agent_name} — session ${r.session_id.slice(0, 8)}…`);
+        if (r.tool_name) console.log(`  Tool: ${r.tool_name}`);
+        const preview = (r.content_text ?? '').slice(0, 200).replace(/\n/g, ' ');
+        console.log(`  ${preview}${(r.content_text ?? '').length > 200 ? '…' : ''}`);
+      }
+      console.log(`\n${results.length} result(s)`);
+    } catch (err) {
+      console.error(`search-sessions failed: ${String(err)}`);
+      process.exit(1);
+    }
+  });
+
+busCommand
+  .command('list-sessions')
+  .description('List indexed session transcripts')
+  .option('--agent <name>', 'Filter by agent name')
+  .option('--after <iso>', 'Only sessions started at or after this ISO 8601 timestamp')
+  .option('--before <iso>', 'Only sessions started at or before this ISO 8601 timestamp')
+  .option('--json', 'Output raw JSON')
+  .action((opts: { agent?: string; after?: string; before?: string; json?: boolean }) => {
+    const env = resolveEnv();
+    const instanceId = env.instanceId || 'default';
+    try {
+      const sessions = listSessions(instanceId, {
+        agent: opts.agent,
+        after: opts.after,
+        before: opts.before,
+      });
+
+      if (opts.json) {
+        console.log(JSON.stringify(sessions, null, 2));
+        return;
+      }
+
+      if (sessions.length === 0) {
+        console.log('No sessions indexed yet. Run: cortextos bus index-sessions');
+        return;
+      }
+
+      console.log(`\nSessions (${sessions.length})\n`);
+      for (const s of sessions) {
+        const tokens = s.total_input_tokens + s.total_output_tokens;
+        console.log(`  ${s.agent_name.padEnd(12)} ${s.started_at.slice(0, 19)}  ${String(s.indexed_lines).padStart(6)} lines  ${String(tokens).padStart(8)} tokens  ${s.session_id.slice(0, 8)}…`);
+      }
+    } catch (err) {
+      console.error(`list-sessions failed: ${String(err)}`);
+      process.exit(1);
+    }
+  });
+
+busCommand
+  .command('session-context')
+  .description('Retrieve context from an indexed session transcript')
+  .argument('<session-id>', 'Session UUID (full or 8-char prefix)')
+  .option('--turn <n>', 'Pivot turn index for window mode')
+  .option('--window <n>', 'Turns before/after pivot (default: 5)', '5')
+  .option('--tool-calls', 'Return all tool calls in the session')
+  .option('--summary', 'Return session summary (first/last turns + token totals)')
+  .option('--json', 'Output raw JSON')
+  .action((sessionId: string, opts: { turn?: string; window?: string; toolCalls?: boolean; summary?: boolean; json?: boolean }) => {
+    const env = resolveEnv();
+    const instanceId = env.instanceId || 'default';
+    try {
+      // Resolve short ID — if 8 chars, find the full session_id
+      let resolvedId = sessionId;
+      if (sessionId.length < 36) {
+        const sessions = listSessions(instanceId, {});
+        const match = sessions.find(s => s.session_id.startsWith(sessionId));
+        if (!match) {
+          console.error(`No session found with prefix: ${sessionId}`);
+          process.exit(1);
+        }
+        resolvedId = match.session_id;
+      }
+
+      const ctx = getSessionContext(instanceId, resolvedId, {
+        turn: opts.turn !== undefined ? parseInt(opts.turn, 10) : undefined,
+        window: parseInt(opts.window ?? '5', 10),
+        toolCalls: opts.toolCalls,
+        summary: opts.summary,
+      });
+
+      if (opts.json) {
+        console.log(JSON.stringify(ctx, null, 2));
+        return;
+      }
+
+      if (ctx.mode === 'summary' && ctx.summary) {
+        const s = ctx.summary;
+        console.log(`\nSession: ${s.session_id}`);
+        console.log(`  Agent:   ${s.agent_name}`);
+        console.log(`  Model:   ${s.model ?? 'unknown'}`);
+        console.log(`  Started: ${s.started_at}`);
+        console.log(`  Ended:   ${s.ended_at ?? 'open'}`);
+        console.log(`  Turns:   ${s.total_turns}`);
+        console.log(`  Tokens:  ${s.total_input_tokens} in / ${s.total_output_tokens} out`);
+        if (s.first_turn) {
+          const preview = (s.first_turn.content_text ?? '').slice(0, 120).replace(/\n/g, ' ');
+          console.log(`\n  First turn [${s.first_turn.role}] ${s.first_turn.timestamp.slice(0, 19)}:`);
+          console.log(`    ${preview}…`);
+        }
+        if (s.last_turn) {
+          const preview = (s.last_turn.content_text ?? '').slice(0, 120).replace(/\n/g, ' ');
+          console.log(`\n  Last turn  [${s.last_turn.role}] ${s.last_turn.timestamp.slice(0, 19)}:`);
+          console.log(`    ${preview}…`);
+        }
+        return;
+      }
+
+      if (ctx.mode === 'tool-calls' && ctx.toolCalls) {
+        if (ctx.toolCalls.length === 0) { console.log('No tool calls found.'); return; }
+        console.log(`\nTool calls (${ctx.toolCalls.length}) in session ${resolvedId.slice(0, 8)}…\n`);
+        for (const tc of ctx.toolCalls) {
+          const inputPreview = tc.input_json.slice(0, 100).replace(/\n/g, ' ');
+          console.log(`  [${String(tc.turn_index).padStart(4)}] ${tc.timestamp.slice(0, 19)}  ${tc.tool_name}`);
+          console.log(`         ${inputPreview}${tc.input_json.length > 100 ? '…' : ''}`);
+        }
+        return;
+      }
+
+      if (ctx.mode === 'window' && ctx.turns) {
+        if (ctx.turns.length === 0) { console.log('No turns found in range.'); return; }
+        console.log(`\nTurns around index ${opts.turn ?? 0} ± ${opts.window ?? 5} in session ${resolvedId.slice(0, 8)}…\n`);
+        for (const t of ctx.turns) {
+          const preview = (t.content_text ?? '').slice(0, 160).replace(/\n/g, ' ');
+          console.log(`  [${String(t.turn_index).padStart(4)}] [${t.role.toUpperCase()}] ${t.timestamp.slice(0, 19)}`);
+          console.log(`         ${preview}${(t.content_text ?? '').length > 160 ? '…' : ''}`);
+        }
+        return;
+      }
+
+      console.log('No data returned.');
+    } catch (err) {
+      console.error(`session-context failed: ${String(err)}`);
+      process.exit(1);
     }
   });
 

@@ -145,15 +145,69 @@ export class AgentPTY {
     // On Windows, npm global installs create .cmd wrappers, not .exe binaries.
     // node-pty's CreateProcess requires the exact wrapper name to resolve correctly.
     const claudeArgs = this.buildClaudeArgs(mode, prompt);
-    const claudeCmd = this.getBinaryName();
+    let claudeCmd = this.getBinaryName();
 
-    this.pty = this.spawnFn!(claudeCmd, claudeArgs, {
-      name: 'xterm-256color',
-      cols: 200,
-      rows: 50,
-      cwd,
-      env: ptyEnv,
-    });
+    // sandbox-exec wrapping — macOS only, opt-in via config.json sandbox_profile
+    if (this.config.sandbox_profile && platform() === 'darwin') {
+      const agentDir = join(
+        this.env.projectRoot ?? '',
+        'orgs', this.env.org ?? '', 'agents', this.env.agentName ?? ''
+      );
+      const claudeProjHash = agentDir.replace(/\//g, '-').replace(/^-/, '');
+      const claudeProjDir = join(
+        process.env.HOME ?? '',
+        '.claude', 'projects', claudeProjHash
+      );
+      const orgDir = join(this.env.projectRoot ?? '', 'orgs', this.env.org ?? '');
+      const ctxRoot = this.env.ctxRoot ?? '';
+      const daemonSock = join(ctxRoot, 'daemon.sock');
+
+      const SENTINEL = '/nonexistent-sandbox-placeholder';
+      const agentsDir = join(orgDir, 'agents');
+      const siblingDirs: string[] = [];
+      try {
+        const allAgents = readdirSync(agentsDir);
+        for (const a of allAgents) {
+          if (a !== this.env.agentName) {
+            siblingDirs.push(join(agentsDir, a));
+          }
+        }
+      } catch { /* proceed without sibling denies if agents dir unreadable */ }
+      while (siblingDirs.length < 4) siblingDirs.push(SENTINEL);
+
+      const sandboxParams = [
+        '-D', `AGENT_DIR=${agentDir}`,
+        '-D', `CTX_ROOT=${ctxRoot}`,
+        '-D', `HOME_DIR=${process.env.HOME ?? ''}`,
+        '-D', `CLAUDE_PROJ_DIR=${claudeProjDir}`,
+        '-D', `DAEMON_SOCK=${daemonSock}`,
+        '-D', `DENY_AGENT_1=${siblingDirs[0]}`,
+        '-D', `DENY_AGENT_2=${siblingDirs[1]}`,
+        '-D', `DENY_AGENT_3=${siblingDirs[2]}`,
+        '-D', `DENY_AGENT_4=${siblingDirs[3]}`,
+      ];
+
+      this.pty = this.spawnFn!('sandbox-exec', [
+        '-f', this.config.sandbox_profile,
+        ...sandboxParams,
+        claudeCmd,
+        ...claudeArgs,
+      ], {
+        name: 'xterm-256color',
+        cols: 200,
+        rows: 50,
+        cwd,
+        env: ptyEnv,
+      });
+    } else {
+      this.pty = this.spawnFn!(claudeCmd, claudeArgs, {
+        name: 'xterm-256color',
+        cols: 200,
+        rows: 50,
+        cwd,
+        env: ptyEnv,
+      });
+    }
 
     this._alive = true;
 
