@@ -48,6 +48,7 @@ export function TimeAgo({ date, className }: TimeAgoProps) {
   return (
     <Tooltip>
       <TooltipTrigger
+        render={<span />}
         className={cn('text-sm text-muted-foreground', className)}
         suppressHydrationWarning
       >
