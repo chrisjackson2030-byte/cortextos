@@ -28,6 +28,7 @@ export default async function AgentInspectorLayout({
           <AgentAvatar
             name={detail?.identity.name ?? decoded}
             emoji={detail?.identity.emoji ?? ''}
+            systemName={decoded}
             size="lg"
           />
           <div className="min-w-0">

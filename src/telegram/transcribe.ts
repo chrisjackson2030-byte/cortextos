@@ -26,6 +26,17 @@ function resolveBin(envVar: string, fallback: string): string {
   return process.env[envVar] || fallback;
 }
 
+function resolveVocabularyPrompt(): string {
+  const vocabPath = process.env.CTX_WHISPER_VOCAB
+    || path.join(os.homedir(), '.cortextos', 'whisper-vocabulary.txt');
+  try {
+    if (fs.existsSync(vocabPath)) {
+      return fs.readFileSync(vocabPath, 'utf8').trim();
+    }
+  } catch { /* ignore read error */ }
+  return '';
+}
+
 export interface TranscribeOptions {
   timeoutMs?: number;
   modelPath?: string;
@@ -66,9 +77,12 @@ export async function transcribeVoice(
   }
 
   try {
+    const whisperArgs = ['-m', modelPath, '-f', wavPath, '-nt', '-np'];
+    const vocab = resolveVocabularyPrompt();
+    if (vocab) whisperArgs.push('--prompt', vocab);
     const whisper = await runProcess(
       whisperBin,
-      ['-m', modelPath, '-f', wavPath, '-nt', '-np'],
+      whisperArgs,
       timeoutMs,
       true,
     );

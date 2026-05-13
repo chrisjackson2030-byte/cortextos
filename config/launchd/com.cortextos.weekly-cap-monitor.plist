@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cortextos.weekly-cap-monitor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/chrisjackson/cortextos/scripts/weekly-cap-monitor.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CTX_INSTANCE_ID</key>
+    <string>default</string>
+    <key>CTX_FRAMEWORK_ROOT</key>
+    <string>/Users/chrisjackson/cortextos</string>
+    <!-- YELLOW at 70% of observed cap, RED at 85% — calibrated 2026-05-12 -->
+    <key>WEEKLY_YELLOW_SESSIONS</key>
+    <string>6500</string>
+    <key>WEEKLY_RED_SESSIONS</key>
+    <string>8000</string>
+  </dict>
+
+  <!-- Run every 3 hours: 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00 -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/Users/chrisjackson/.cortextos/default/logs/weekly-cap-monitor-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/chrisjackson/.cortextos/default/logs/weekly-cap-monitor-stderr.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

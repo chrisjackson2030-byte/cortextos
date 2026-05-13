@@ -59,7 +59,7 @@ export function AgentCard({ agent }: AgentCardProps) {
           {/* Header: avatar + name + health */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <AgentAvatar name={agent.name} emoji={agent.emoji} size="md" />
+              <AgentAvatar name={agent.name} emoji={agent.emoji} systemName={agent.systemName} size="md" />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold leading-tight">{agent.name}</p>

@@ -126,7 +126,8 @@ export async function getAgentIdentity(
  */
 export async function discoverAgents(org?: string): Promise<AgentSummary[]> {
   const allAgents = getAllAgents();
-  const agents = org ? allAgents.filter((a) => a.org === org) : allAgents;
+  const agents = (org ? allAgents.filter((a) => a.org === org) : allAgents)
+    .filter((a) => !a.name.startsWith('_'));
 
   const summaries = await Promise.all(
     agents.map(async (agent) => {

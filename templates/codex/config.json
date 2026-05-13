@@ -1,0 +1,21 @@
+{
+  "agent_name": "{{agent_name}}",
+  "enabled": true,
+  "runtime": "codex",
+  "startup_delay": 0,
+  "max_session_seconds": 86400,
+  "max_crashes_per_day": 10,
+  "working_directory": "",
+  "timezone": "America/New_York",
+  "crons": [
+    {
+      "name": "heartbeat",
+      "type": "recurring",
+      "interval": "4h",
+      "prompt": "Read HEARTBEAT.md and follow its instructions. Update your heartbeat, check inbox, and work on your highest priority task."
+    }
+  ],
+  "ecosystem": {
+    "local_version_control": { "enabled": true }
+  }
+}
