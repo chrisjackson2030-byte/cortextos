@@ -59,6 +59,11 @@ export class FastChecker {
   // Persisted to disk so --continue restarts don't reset the circuit breaker
   private ctxCircuitFile: string = '';
 
+  // Rate-limit detection state
+  private rlConsecCount: number = 0;     // consecutive poll cycles with rate-limit signal
+  private rlNotifiedAt: number = 0;      // 0 = not yet notified; ms timestamp when notified
+  private rlResetAfter: number = 0;      // when the detection window auto-resets (ms)
+
   constructor(
     agent: AgentProcess,
     paths: BusPaths,
@@ -211,6 +216,9 @@ export class FastChecker {
 
     // Context monitor: check usage thresholds and fire warnings/handoffs
     await this.checkContextStatus();
+
+    // Rate-limit monitor: detect weekly cap hits and notify orchestrator
+    this.checkRateLimitStatus();
   }
 
   /**
@@ -999,6 +1007,72 @@ Reply using: cortextos bus send-telegram ${chatId} '<your reply>'
   }
 
   /**
+   * Rate-limit monitor — called on every poll cycle.
+   *
+   * Detects two tiers of Claude Max usage events observed in real PTY stdout:
+   *   Tier 1 — session % banner (real log: "You've used 99% of your session limit")
+   *   Tier 2 — hard API errors that may appear when the weekly cap is fully exhausted
+   *
+   * Debounce: signal must appear in 3+ consecutive cycles (~3 min at 1 min poll) before
+   * the orchestrator is notified. This avoids false alarms from transient blips.
+   * Notification is sent once per window and only to the orchestrator (never direct to B).
+   */
+  private checkRateLimitStatus(): void {
+    const now = Date.now();
+
+    // Auto-reset after 30 min of clean output (cap resets daily or was a blip)
+    if (this.rlResetAfter > 0 && now > this.rlResetAfter) {
+      this.rlConsecCount = 0;
+      this.rlNotifiedAt = 0;
+      this.rlResetAfter = 0;
+    }
+
+    // Only notify once per detection window
+    if (this.rlNotifiedAt > 0) return;
+
+    const recentOutput = this.agent.getOutputBuffer()?.getRecent(6000) ?? '';
+    if (!recentOutput) return;
+
+    // Tier 1: session-limit percentage banner (grounded in real stdout.log data)
+    // "You've used 99% of your session limit · resets 10pm (America/New_York)"
+    const pctMatch = recentOutput.match(/You.ve used (\d+)% of your session limit/i);
+    const atHighPct = pctMatch !== null && parseInt(pctMatch[1], 10) >= 99;
+
+    // Tier 2: hard API / rate-limit error strings
+    const hasApiError = /rate.?limit.*exceeded|429.*Too Many|usage limit reached|claude max.*not available/i
+      .test(recentOutput);
+
+    const hitDetected = atHighPct || hasApiError;
+
+    if (hitDetected) {
+      this.rlConsecCount++;
+      this.rlResetAfter = now + 30 * 60_000;
+      this.log(`Rate-limit signal detected (consecutive: ${this.rlConsecCount}, tier: ${atHighPct ? 'pct-banner' : 'api-error'})`);
+    } else {
+      // Decay slowly — require 2 clean cycles to avoid resetting on a gap between hits
+      if (this.rlConsecCount > 0) {
+        this.rlConsecCount = Math.max(0, this.rlConsecCount - 1);
+      }
+      return;
+    }
+
+    // Confirmed: 3+ consecutive cycles → notify orchestrator
+    if (this.rlConsecCount >= 3) {
+      this.rlNotifiedAt = now;
+      const msg = [
+        `RATE_LIMIT_CONFIRMED: ${this.agent.name} has been at session cap for 3+ minutes.`,
+        `Recommend rotating to codex-app-server runtime. Awaiting B approval before any change.`,
+        `To rotate once approved: cortextos bus rotate-runtime ${this.agent.name} codex-app-server`,
+        `To rotate back after cap resets: cortextos bus rotate-runtime ${this.agent.name} claude-code`,
+      ].join(' ');
+      this.log(msg);
+      execFile('cortextos', ['bus', 'send-message', 'jarvis', 'high', msg], (err) => {
+        if (err) this.log(`Failed to notify orchestrator of rate limit: ${err.message}`);
+      });
+    }
+  }
+
+  /**
    * Force a fresh hard restart for context exhaustion reasons.
    * Writes .force-fresh + .restart-planned, then triggers sessionRefresh().
    * The circuit breaker prevents runaway restart loops.
@@ -1173,7 +1247,7 @@ Reply using: cortextos bus send-telegram ${chatId} '<your reply>'
     const outboundPath = join(this.paths.logDir, 'outbound-messages.jsonl');
     try {
       if (existsSync(outboundPath)) {
-        const { size } = require('fs').statSync(outboundPath);
+        const { size } = statSync(outboundPath);
         if (this.outboundLogSize === 0) {
           // First check: seed baseline, don't trigger yet
           this.outboundLogSize = size;
@@ -1200,6 +1274,7 @@ Reply using: cortextos bus send-telegram ${chatId} '<your reply>'
       return true; // Can't read flag — assume still active
     }
   }
+
 }
 
 function sleep(ms: number): Promise<void> {

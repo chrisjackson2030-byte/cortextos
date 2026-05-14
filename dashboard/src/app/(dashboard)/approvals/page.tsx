@@ -67,6 +67,11 @@ export default function ApprovalsPage() {
     fetchApprovals();
   }, [fetchApprovals]);
 
+  useEffect(() => {
+    const interval = setInterval(fetchApprovals, 20000);
+    return () => clearInterval(interval);
+  }, [fetchApprovals]);
+
   function handleApprovalClick(approval: Approval) {
     setSelectedApproval(approval);
     setDialogOpen(true);

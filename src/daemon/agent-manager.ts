@@ -66,6 +66,14 @@ export class AgentManager {
         console.log(`[agent-manager] Skipping disabled agent: ${name} (enabled-agents.json)`);
         continue;
       }
+      // Bug C (COR-012) fix: respect .user-stop markers across daemon restarts.
+      // If the user ran `cortextos stop <agent>`, the agent should stay stopped
+      // until explicitly started with `cortextos start <agent>`.
+      const userStopFile = join(this.ctxRoot, 'state', name, '.user-stop');
+      if (existsSync(userStopFile)) {
+        console.log(`[agent-manager] Skipping stopped agent: ${name} (.user-stop present)`);
+        continue;
+      }
       // BUG-043 fix: pass the per-agent org so startAgent can use it instead
       // of falling back to `this.org` (the daemon's startup org).
       await this.startAgent(name, dir, config, org);
@@ -236,7 +244,11 @@ export class AgentManager {
       }
 
       if (botToken && chatId) {
-        telegramApi = new TelegramAPI(botToken);
+        // Pass per-agent stateDir + logDir so OutboundDedup can persist
+        // the 60s suppression window across daemon restarts.
+        const tgStateDir = join(this.ctxRoot, 'state', name);
+        const tgLogDir = join(this.ctxRoot, 'logs', name);
+        telegramApi = new TelegramAPI(botToken, tgStateDir, tgLogDir);
         // Don't log sensitive user IDs — just indicate the gate is enabled
         log(`Telegram configured (chat_id: ****${String(chatId).slice(-4)}, allowed_user: enabled)`);
       }
@@ -470,7 +482,7 @@ export class AgentManager {
       // — follow-up task_1776054009969_099 tracks migrating to a dedicated
       // singleton or Telegram webhook if the coupling ever causes real
       // operator pain. Non-orchestrator agents skip this entirely.
-      await this.maybeStartActivityChannelPoller(name, org, agentDir, log);
+      await this.maybeStartActivityChannelPoller(name, resolvedOrg, agentDir, log);
     }
   }
 
@@ -528,8 +540,9 @@ export class AgentManager {
       return;
     }
 
-    const activityApi = new TelegramAPI(activityBotToken);
     const stateDir = join(this.ctxRoot, 'state', name);
+    const activityLogDir = join(this.ctxRoot, 'logs', name);
+    const activityApi = new TelegramAPI(activityBotToken, stateDir, activityLogDir);
     // offsetFileSuffix keeps the activity poller's offset file distinct
     // from the primary bot's .telegram-offset — without this they would
     // clobber each other in the same stateDir.

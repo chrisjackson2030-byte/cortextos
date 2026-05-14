@@ -80,15 +80,116 @@ export function formatValidateError(result: Extract<ValidateCredentialsResult, {
   }
 }
 
+/**
+ * Suppress duplicate outbound Telegram sends within a rolling 60s window.
+ *
+ * Why: context-rot in Jarvis (May 12-13 incident) produced duplicate
+ * status messages to the operator chat. Inbound dedup exists at the
+ * fast-checker layer (state/<agent>/.message-dedup-hashes); outbound
+ * had no equivalent gate. This class is the symmetric guard.
+ *
+ * Hash: SHA-256 of `chat_id|text`. Stored in a Map keyed by hash with
+ * the timestamp of last send. On every sendMessage, prune entries older
+ * than 60s, then check membership.
+ *
+ * Persistence: hashes written to `<stateDir>/.outbound-dedup-hashes`
+ * one-per-line as `<hash>:<epoch_ms>`. Loaded on construction. Capped
+ * at 200 entries to bound the file size. A daemon restart preserves
+ * the dedup window so a respawned agent cannot immediately re-send a
+ * message it sent 30s before the restart.
+ *
+ * Suppressed sends are logged to `<logDir>/outbound-suppressed.jsonl`
+ * for operator observability — silent only to the recipient, fully
+ * visible to operator review.
+ */
+class OutboundDedup {
+  private hashes: Map<string, number> = new Map();
+  private statePath: string | null;
+  private logPath: string | null;
+  private static readonly WINDOW_MS = 60_000;
+  private static readonly MAX_ENTRIES = 200;
+
+  constructor(stateDir: string | null, logDir: string | null) {
+    const path = require('path');
+    this.statePath = stateDir ? path.join(stateDir, '.outbound-dedup-hashes') : null;
+    this.logPath = logDir ? path.join(logDir, 'outbound-suppressed.jsonl') : null;
+    this.load();
+  }
+
+  private hash(chatId: string, text: string): string {
+    return require('crypto').createHash('sha256').update(`${chatId}|${text}`).digest('hex');
+  }
+
+  private prune(): void {
+    const cutoff = Date.now() - OutboundDedup.WINDOW_MS;
+    for (const [h, ts] of this.hashes) {
+      if (ts < cutoff) this.hashes.delete(h);
+    }
+  }
+
+  isDuplicate(chatId: string, text: string): boolean {
+    this.prune();
+    const h = this.hash(chatId, text);
+    if (this.hashes.has(h)) return true;
+    this.hashes.set(h, Date.now());
+    if (this.hashes.size > OutboundDedup.MAX_ENTRIES) {
+      const sorted = [...this.hashes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, OutboundDedup.MAX_ENTRIES);
+      this.hashes = new Map(sorted);
+    }
+    this.persist();
+    return false;
+  }
+
+  logSuppressed(chatId: string, text: string): void {
+    if (!this.logPath) return;
+    try {
+      const entry = JSON.stringify({
+        ts: new Date().toISOString(),
+        event: 'outbound_suppressed',
+        chat_id_suffix: String(chatId).slice(-4),
+        text_preview: text.slice(0, 200),
+        reason: 'duplicate within 60s window',
+      });
+      require('fs').appendFileSync(this.logPath, entry + '\n', 'utf-8');
+    } catch { /* best-effort; never block a send */ }
+  }
+
+  private load(): void {
+    if (!this.statePath) return;
+    try {
+      const content = require('fs').readFileSync(this.statePath, 'utf-8');
+      const cutoff = Date.now() - OutboundDedup.WINDOW_MS;
+      for (const line of content.split('\n')) {
+        const [h, tsStr] = line.split(':');
+        if (!h || !tsStr) continue;
+        const ts = parseInt(tsStr, 10);
+        if (!isNaN(ts) && ts >= cutoff) this.hashes.set(h, ts);
+      }
+    } catch { /* file may not exist on first start */ }
+  }
+
+  private persist(): void {
+    if (!this.statePath) return;
+    try {
+      const lines = [...this.hashes.entries()].map(([h, ts]) => `${h}:${ts}`).join('\n');
+      require('fs').writeFileSync(this.statePath, lines + '\n', 'utf-8');
+    } catch { /* non-critical */ }
+  }
+}
+
 export class TelegramAPI {
   private baseUrl: string;
   private lastSendTime: Map<string, number> = new Map();
   // Chat IDs already warned for the self_chat trap. Keeps the runtime
   // diagnostic emitted at most once per chat_id per process lifetime.
   private warnedSelfChat: Set<string> = new Set();
+  private dedup: OutboundDedup;
 
-  constructor(token: string) {
+  constructor(token: string, stateDir?: string | null, logDir?: string | null) {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
+    this.dedup = new OutboundDedup(stateDir ?? null, logDir ?? null);
   }
 
   /**
@@ -191,6 +292,16 @@ export class TelegramAPI {
   ): Promise<any> {
     const plainText = opts?.parseMode === null;
     const html = this.markdownToHtml(text, plainText);
+
+    // Outbound dedup: suppress duplicate (chatId, text) within a 60s rolling
+    // window. Hashes the RAW caller-supplied text (pre-HTML) so dedup matches
+    // caller intent, not the wire format. Suppressed returns include
+    // result.message_id: 0 so callers reading result?.result?.message_id ?? 0
+    // (e.g. src/cli/bus.ts:1119-1127) resolve cleanly to 0.
+    if (this.dedup.isDuplicate(String(chatId), text)) {
+      this.dedup.logSuppressed(String(chatId), text);
+      return { ok: true, suppressed: true, reason: 'outbound_dedup', result: { message_id: 0 } };
+    }
 
     await this.rateLimit(String(chatId));
 

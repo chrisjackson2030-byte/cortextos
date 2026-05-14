@@ -85,6 +85,11 @@ export default function TasksPage() {
     fetchTasks();
   }, [fetchTasks]);
 
+  useEffect(() => {
+    const interval = setInterval(fetchTasks, 15000);
+    return () => clearInterval(interval);
+  }, [fetchTasks]);
+
   function handleFilterChange(key: string, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }

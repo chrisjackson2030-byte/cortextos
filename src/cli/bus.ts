@@ -1,10 +1,11 @@
 import { Command } from 'commander';
 import { spawnSync, execFileSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { sendMessage, checkInbox, ackInbox } from '../bus/message.js';
 import { validateAgentName } from '../utils/validate.js';
-import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTaskDependencies, compactTasks, listTasks, checkStaleTasks, archiveTasks, checkHumanTasks } from '../bus/task.js';
+import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTaskDependencies, compactTasks, listTasks, checkStaleTasks, archiveTasks, checkHumanTasks, getTasksForRuntime, routeTask, discoverAgentRuntimes } from '../bus/task.js';
 import { saveOutput } from '../bus/save-output.js';
 import { logEvent } from '../bus/event.js';
 import { updateHeartbeat, readAllHeartbeats } from '../bus/heartbeat.js';
@@ -152,10 +153,16 @@ busCommand
   .option('--needs-approval', 'Require human approval before execution')
   .option('--blocked-by <ids>', 'Comma-separated task IDs that must complete before this task can progress')
   .option('--blocks <ids>', 'Comma-separated task IDs that this new task will block (symmetric reverse edge)')
-  .action((title: string, opts: { desc?: string; assignee?: string; priority: string; project?: string; needsApproval?: boolean; blockedBy?: string; blocks?: string }) => {
+  .option('--runtime <pref>', 'Runtime preference: codex-ok | claude-only | either (omit = any runtime)')
+  .action((title: string, opts: { desc?: string; assignee?: string; priority: string; project?: string; needsApproval?: boolean; blockedBy?: string; blocks?: string; runtime?: string }) => {
     const env = resolveEnv();
     const paths = resolvePaths(env.agentName, env.instanceId, env.org);
     const parseList = (raw?: string) => (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []);
+    const validRuntimes = ['codex-ok', 'claude-only', 'either'];
+    if (opts.runtime && !validRuntimes.includes(opts.runtime)) {
+      console.error(`Invalid --runtime '${opts.runtime}'. Must be one of: ${validRuntimes.join(', ')}`);
+      process.exit(1);
+    }
     const taskId = createTask(paths, env.agentName, env.org, title, {
       description: opts.desc,
       assignee: opts.assignee,
@@ -164,6 +171,7 @@ busCommand
       needsApproval: opts.needsApproval ?? false,
       blockedBy: parseList(opts.blockedBy),
       blocks: parseList(opts.blocks),
+      runtimePreference: opts.runtime as 'codex-ok' | 'claude-only' | 'either' | undefined,
     });
     console.log(taskId);
     // Auto-notify assignee so the task is visible immediately (issue #78)
@@ -173,6 +181,73 @@ busCommand
       sendMessage(assigneePaths, env.agentName, opts.assignee, 'normal',
         `Task assigned: [${opts.priority}] ${title}${desc} (id: ${taskId})`);
     }
+  });
+
+busCommand
+  .command('dispatch-task')
+  .description('Create a task and auto-assign to the best agent based on runtime preference and current load')
+  .argument('<title>', 'Task title')
+  .option('--desc <description>', 'Task description')
+  .option('--priority <p>', 'Priority (urgent, high, normal, low)', 'normal')
+  .option('--project <name>', 'Project name')
+  .option('--runtime <pref>', 'Runtime preference: codex-ok | claude-only | either', 'either')
+  .option('--exclude <agents>', 'Comma-separated agent names to exclude from routing')
+  .action((title: string, opts: { desc?: string; priority: string; project?: string; runtime: string; exclude?: string }) => {
+    const validRuntimes = ['codex-ok', 'claude-only', 'either'];
+    if (!validRuntimes.includes(opts.runtime)) {
+      console.error(`Invalid --runtime '${opts.runtime}'. Must be one of: ${validRuntimes.join(', ')}`);
+      process.exit(1);
+    }
+    const env = resolveEnv();
+    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
+    const frameworkRoot = env.frameworkRoot || process.cwd();
+    const ctxRoot = join(homedir(), '.cortextos', env.instanceId);
+    const excludeList = opts.exclude ? opts.exclude.split(',').map(s => s.trim()) : [];
+    try {
+      const result = routeTask(frameworkRoot, ctxRoot, env.instanceId, paths, env.agentName, env.org, title, {
+        description: opts.desc,
+        priority: opts.priority as Priority,
+        project: opts.project,
+        runtimePreference: opts.runtime as 'codex-ok' | 'claude-only' | 'either',
+        excludeAgents: excludeList,
+      });
+      console.log(JSON.stringify(result));
+    } catch (err: unknown) {
+      console.error((err as Error).message);
+      process.exit(1);
+    }
+  });
+
+busCommand
+  .command('list-runtimes')
+  .description('Show all agents grouped by their runtime, with current task load')
+  .option('--format <fmt>', 'Output format: json|text', 'text')
+  .action((opts: { format?: string }) => {
+    const env = resolveEnv();
+    const frameworkRoot = env.frameworkRoot || process.cwd();
+    const ctxRoot = join(homedir(), '.cortextos', env.instanceId);
+    const agents = discoverAgentRuntimes(frameworkRoot, ctxRoot, env.instanceId);
+
+    if (opts.format === 'json') {
+      console.log(JSON.stringify(agents, null, 2));
+      return;
+    }
+
+    const grouped: Record<string, typeof agents> = {};
+    for (const a of agents) {
+      const key = a.runtime;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(a);
+    }
+
+    for (const [runtime, group] of Object.entries(grouped)) {
+      console.log(`\n${runtime}:`);
+      for (const a of group) {
+        const status = a.enabled ? 'enabled' : 'disabled';
+        console.log(`  ${a.name} (${a.org}) [${status}] — ${a.inProgressCount} tasks in progress`);
+      }
+    }
+    console.log(`\nTotal: ${agents.length} agents across ${Object.keys(grouped).length} runtimes`);
   });
 
 busCommand
@@ -386,6 +461,34 @@ busCommand
       const assignee = (t.assigned_to || '-').substring(0, 16).padEnd(17);
       const title = t.title.substring(0, 50);
       console.log(`  ${statusIcon}${priIcon}${id}${assignee}${title}`);
+    }
+    console.log('');
+  });
+
+busCommand
+  .command('list-tasks-for-runtime')
+  .argument('<runtime>', 'Runtime family: claude-code | codex-app-server')
+  .option('--agent <name>', 'Filter by assigned agent')
+  .option('--format <fmt>', 'Output format: json or text', 'text')
+  .action((runtime: string, opts: { agent?: string; format?: string }) => {
+    const env = resolveEnv();
+    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
+    const tasks = getTasksForRuntime(paths, runtime, { agent: opts.agent });
+
+    if (opts.format === 'json') {
+      console.log(JSON.stringify(tasks, null, 2));
+      return;
+    }
+
+    if (tasks.length === 0) {
+      console.log(`  No pending tasks eligible for runtime '${runtime}'.`);
+      return;
+    }
+
+    console.log(`\n  Pending tasks eligible for '${runtime}' (${tasks.length})\n`);
+    for (const t of tasks) {
+      const pref = t.runtime_preference ?? 'any';
+      console.log(`  ${t.id}  [${t.priority}]  [pref:${pref}]  ${t.title}`);
     }
     console.log('');
   });
@@ -982,6 +1085,30 @@ busCommand
     if (!botToken) {
       console.error('Error: BOT_TOKEN not configured. Set it in your agent .env file or as an environment variable to enable Telegram.');
       process.exit(1);
+    }
+
+    // Dedup: skip if we sent a very similar message to this chat in the last 60 seconds
+    if (env.agentName && env.ctxRoot) {
+      const outboundPath = join(env.ctxRoot, 'logs', env.agentName, 'outbound-messages.jsonl');
+      if (existsSync(outboundPath)) {
+        try {
+          const lines = readFileSync(outboundPath, 'utf-8').trim().split('\n').filter(Boolean);
+          const sixtySecsAgo = Date.now() - 60_000;
+          for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
+            try {
+              const entry = JSON.parse(lines[i]) as Record<string, unknown>;
+              const ts = new Date(entry['timestamp'] as string).getTime();
+              if (ts < sixtySecsAgo) break;
+              const prev = (entry['text'] as string || '').slice(0, 80);
+              const curr = message.slice(0, 80);
+              if (prev === curr && entry['chat_id'] === chatId) {
+                console.log('Message sent');
+                return;
+              }
+            } catch { /* skip */ }
+          }
+        } catch { /* non-critical */ }
+      }
     }
 
     const api = new TelegramAPI(botToken);
@@ -2925,6 +3052,263 @@ busCommand
       console.error(`session-context failed: ${String(err)}`);
       process.exit(1);
     }
+  });
+
+busCommand
+  .command('rotate-runtime')
+  .description('Switch an agent to a different runtime and restart it. Used for Claude Max rate-limit failover.')
+  .argument('<agent>', 'Agent name to rotate (e.g. forge, jarvis)')
+  .argument('<runtime>', 'Target runtime: claude-code | codex-app-server | hermes')
+  .option('--org <org>', 'Org the agent belongs to (auto-detected if omitted)')
+  .option('--instance <id>', 'Instance ID', 'default')
+  .option('--dry-run', 'Preview changes without modifying any files')
+  .action(async (agentArg: string, runtimeArg: string, opts: { org?: string; instance: string; dryRun?: boolean }) => {
+    const VALID_RUNTIMES = ['claude-code', 'codex-app-server', 'hermes'];
+    if (!VALID_RUNTIMES.includes(runtimeArg)) {
+      console.error(`Invalid runtime '${runtimeArg}'. Valid options: ${VALID_RUNTIMES.join(', ')}`);
+      process.exit(1);
+    }
+
+    // Locate agent config.json by scanning orgs/*/agents/<agent>/
+    const env = resolveEnv();
+    const frameworkRoot = env.frameworkRoot;
+    const orgsBase = join(frameworkRoot, 'orgs');
+
+    let agentDir: string | null = null;
+    let foundOrg: string | null = null;
+
+    if (opts.org) {
+      const candidate = join(orgsBase, opts.org, 'agents', agentArg);
+      if (existsSync(join(candidate, 'config.json'))) {
+        agentDir = candidate;
+        foundOrg = opts.org;
+      }
+    } else {
+      try {
+        const orgs = readdirSync(orgsBase, { withFileTypes: true }).filter(d => d.isDirectory());
+        for (const org of orgs) {
+          const candidate = join(orgsBase, org.name, 'agents', agentArg);
+          if (existsSync(join(candidate, 'config.json'))) {
+            agentDir = candidate;
+            foundOrg = org.name;
+            break;
+          }
+        }
+      } catch { /* orgs dir unreadable */ }
+    }
+
+    if (!agentDir || !foundOrg) {
+      console.error(`Agent '${agentArg}' not found in any org under ${orgsBase}`);
+      process.exit(1);
+    }
+
+    // Precondition check for codex-app-server
+    if (runtimeArg === 'codex-app-server') {
+      // 1. Check codex binary
+      const codexCheck = spawnSync('which', ['codex'], { encoding: 'utf-8' });
+      const codexBin = codexCheck.stdout.trim();
+      if (!codexBin) {
+        console.error('FAIL: codex binary not found in PATH.');
+        console.error('Install with: npm install -g @openai/codex');
+        process.exit(1);
+      }
+
+      // 2. Determine CODEX_HOME from agent .env (fall back to ~/.codex-hermes)
+      let codexHome = join(homedir(), '.codex-hermes');
+      const envPath = join(agentDir, '.env');
+      if (existsSync(envPath)) {
+        const envContent = readFileSync(envPath, 'utf-8');
+        const match = envContent.match(/^CODEX_HOME=(.+)$/m);
+        if (match) codexHome = match[1].trim();
+      }
+
+      // 3. Verify auth.json exists and has a token
+      const authPath = join(codexHome, 'auth.json');
+      if (!existsSync(authPath)) {
+        console.error(`FAIL: Codex auth not found at ${authPath}`);
+        console.error(`Authenticate first: CODEX_HOME=${codexHome} codex auth login`);
+        process.exit(1);
+      }
+      try {
+        const auth = JSON.parse(readFileSync(authPath, 'utf-8')) as Record<string, unknown>;
+        // Accept any of the known Codex CLI auth field names
+        const hasToken = auth['accessToken'] || auth['apiKey'] || auth['token']
+          || auth['OPENAI_API_KEY'] || auth['tokens'];
+        if (!hasToken) {
+          console.error(`FAIL: ${authPath} exists but contains no valid token fields`);
+          process.exit(1);
+        }
+      } catch {
+        console.error(`FAIL: ${authPath} is malformed or unreadable`);
+        process.exit(1);
+      }
+
+      if (!opts.dryRun) {
+        console.log(`  ✓ codex binary: ${codexBin}`);
+        console.log(`  ✓ auth: ${authPath}`);
+      }
+    }
+
+    // Read current config
+    const configPath = join(agentDir, 'config.json');
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      console.error(`Cannot read config.json at ${configPath}`);
+      process.exit(1);
+    }
+
+    const currentRuntime = (config['runtime'] as string | undefined) ?? 'claude-code';
+    if (currentRuntime === runtimeArg) {
+      console.log(`Agent '${agentArg}' is already on runtime '${runtimeArg}'. No change needed.`);
+      process.exit(0);
+    }
+
+    if (opts.dryRun) {
+      console.log(`DRY RUN: Would rotate '${agentArg}' (org: ${foundOrg}) from '${currentRuntime}' → '${runtimeArg}'`);
+      console.log(`  config.json: ${configPath}`);
+      console.log(`  .force-fresh marker: ${join(env.ctxRoot, 'state', agentArg, '.force-fresh')}`);
+      console.log(`  Then: IPC restart-agent ${agentArg}`);
+      process.exit(0);
+    }
+
+    // Apply the change
+    config['runtime'] = runtimeArg;
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+
+    // Write .force-fresh so the next start is a clean fresh session (not --continue)
+    const stateDir = join(env.ctxRoot, 'state', agentArg);
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, '.force-fresh'),
+      `rotate-runtime: ${currentRuntime} → ${runtimeArg}\n`,
+      'utf-8',
+    );
+
+    console.log(`Rotated '${agentArg}': ${currentRuntime} → ${runtimeArg}`);
+
+    // Trigger restart via daemon IPC
+    const ipc = new IPCClient(opts.instance);
+    const daemonRunning = await ipc.isDaemonRunning();
+    if (daemonRunning) {
+      const resp = await ipc.send({ type: 'restart-agent', agent: agentArg, source: 'cortextos bus rotate-runtime' });
+      if (resp.success) {
+        console.log(`  Daemon restart triggered — ${agentArg} will start as '${runtimeArg}'`);
+      } else {
+        console.error(`  Daemon restart failed: ${resp.error}`);
+        console.error(`  Restart manually: cortextos restart ${agentArg}`);
+      }
+    } else {
+      console.log(`  Daemon not running. Start with: cortextos start`);
+    }
+  });
+
+busCommand
+  .command('check-usage')
+  .description('Show token usage across all agents from the sessions database')
+  .option('--days <n>', 'Look back N days (default: 7)', '7')
+  .option('--format <fmt>', 'Output format: json|text', 'text')
+  .action((opts: { days: string; format?: string }) => {
+    const days = parseInt(opts.days, 10) || 7;
+    const dbPath = join(homedir(), '.cortextos', 'default', 'indexer', 'sessions.db');
+    if (!existsSync(dbPath)) {
+      console.error(`Sessions database not found at ${dbPath}`);
+      process.exit(1);
+    }
+    const result = spawnSync('sqlite3', [dbPath, '-json', `
+      SELECT
+        agent_name,
+        COUNT(*) as sessions,
+        COALESCE(SUM(total_input_tokens), 0) as input_tokens,
+        COALESCE(SUM(total_output_tokens), 0) as output_tokens,
+        COALESCE(SUM(total_input_tokens + total_output_tokens), 0) as total_tokens,
+        COALESCE(SUM(total_cache_read), 0) as cache_read
+      FROM sessions
+      WHERE started_at > datetime('now', '-${days} days')
+      GROUP BY agent_name
+      ORDER BY total_tokens DESC;
+    `], { encoding: 'utf-8' });
+
+    if (result.status !== 0) {
+      console.error(`sqlite3 query failed: ${result.stderr}`);
+      process.exit(1);
+    }
+
+    let rows: Array<{ agent_name: string; sessions: number; input_tokens: number; output_tokens: number; total_tokens: number; cache_read: number }>;
+    try { rows = JSON.parse(result.stdout || '[]'); } catch { rows = []; }
+
+    const grandTotal = rows.reduce((s, r) => s + r.total_tokens, 0);
+
+    if (opts.format === 'json') {
+      console.log(JSON.stringify({ period_days: days, agents: rows, grand_total: grandTotal }));
+      return;
+    }
+
+    const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K` : `${n}`;
+
+    console.log(`\nToken usage (last ${days} days):\n`);
+    for (const r of rows) {
+      const pct = grandTotal > 0 ? Math.round((r.total_tokens / grandTotal) * 100) : 0;
+      console.log(`  ${r.agent_name.padEnd(20)} ${fmtTokens(r.total_tokens).padStart(8)}  (${pct}%)  ${r.sessions} sessions`);
+    }
+    console.log(`\n  ${'TOTAL'.padEnd(20)} ${fmtTokens(grandTotal).padStart(8)}`);
+  });
+
+busCommand
+  .command('route-task')
+  .argument('<task_id>', 'Task ID to route')
+  .description('Determine which runtime should execute a task based on runtime_preference and current usage')
+  .action((taskId: string) => {
+    const env = resolveEnv();
+    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
+    const taskFile = join(paths.taskDir, `${taskId}.json`);
+    if (!existsSync(taskFile)) {
+      console.error(`Task not found: ${taskId}`);
+      process.exit(1);
+    }
+    let task: Task;
+    try {
+      task = JSON.parse(readFileSync(taskFile, 'utf-8')) as Task;
+    } catch {
+      console.error(`Could not parse task: ${taskId}`);
+      process.exit(1);
+    }
+    const pref = task.runtime_preference ?? 'either';
+    const frameworkRoot = env.frameworkRoot || process.cwd();
+    const ctxRoot = join(homedir(), '.cortextos', env.instanceId);
+    const agents = discoverAgentRuntimes(frameworkRoot, ctxRoot, env.instanceId);
+
+    if (pref === 'claude-only') {
+      const candidates = agents.filter(a => a.enabled && a.runtime === 'claude-code').sort((a, b) => a.inProgressCount - b.inProgressCount);
+      const best = candidates[0];
+      console.log(JSON.stringify({ task_id: taskId, runtime: 'claude-code', agent: best?.name ?? null, reason: 'claude-only preference', candidates: candidates.length }));
+      return;
+    }
+    if (pref === 'codex-ok') {
+      const candidates = agents.filter(a => a.enabled && a.runtime === 'codex-app-server').sort((a, b) => a.inProgressCount - b.inProgressCount);
+      const best = candidates[0];
+      console.log(JSON.stringify({ task_id: taskId, runtime: 'codex-app-server', agent: best?.name ?? null, reason: 'codex-ok preference', candidates: candidates.length }));
+      return;
+    }
+    // 'either': check current usage to decide
+    const monitorFile = join(homedir(), '.cortextos', 'weekly-cap-monitor.jsonl');
+    let usagePct = 0;
+    if (existsSync(monitorFile)) {
+      try {
+        const lines = readFileSync(monitorFile, 'utf-8').trim().split('\n').filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const entry = JSON.parse(lines[i]) as Record<string, unknown>;
+            if (typeof entry['usage_pct'] === 'number') { usagePct = entry['usage_pct']; break; }
+          } catch { /* skip malformed */ }
+        }
+      } catch { /* default 0 */ }
+    }
+    const targetRuntime = usagePct > 60 ? 'codex-app-server' : 'claude-code';
+    const candidates = agents.filter(a => a.enabled && a.runtime === targetRuntime).sort((a, b) => a.inProgressCount - b.inProgressCount);
+    const best = candidates[0];
+    console.log(JSON.stringify({ task_id: taskId, runtime: targetRuntime, agent: best?.name ?? null, reason: `usage ${usagePct}% ${usagePct > 60 ? '>' : '<='} 60% threshold`, candidates: candidates.length }));
   });
 
 function sleepMs(ms: number): Promise<void> {

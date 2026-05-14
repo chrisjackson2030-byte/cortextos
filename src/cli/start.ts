@@ -167,6 +167,18 @@ export const startCommand = new Command('start')
         console.log(`  Registered ${agent} in enabled-agents.json`);
       }
 
+      // Bug C (COR-012) fix: clear .user-stop so the daemon knows this agent
+      // should run. Only `cortextos start <agent>` clears the flag — daemon
+      // restarts do not, making the stop persistent.
+      try {
+        const userStopPath = join(ctxRoot, 'state', agent, '.user-stop');
+        if (existsSync(userStopPath)) {
+          const { unlinkSync } = await import('fs');
+          unlinkSync(userStopPath);
+          console.log(`  Cleared .user-stop marker`);
+        }
+      } catch { /* don't block start on marker cleanup failure */ }
+
       console.log(`Starting agent: ${agent}`);
       const response = await ipc.send({ type: 'start-agent', agent, source: 'cortextos start' });
       if (response.success) {

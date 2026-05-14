@@ -23,6 +23,7 @@ export function createTask(
     dueDate?: string;
     blockedBy?: string[];
     blocks?: string[];
+    runtimePreference?: 'codex-ok' | 'claude-only' | 'either';
   } = {},
 ): string {
   const {
@@ -34,6 +35,7 @@ export function createTask(
     dueDate = '',
     blockedBy = [],
     blocks = [],
+    runtimePreference,
   } = options;
 
   validatePriority(priority);
@@ -78,6 +80,7 @@ export function createTask(
     completed_at: null,
     due_date: dueDate || null,
     archived: false,
+    ...(runtimePreference ? { runtime_preference: runtimePreference } : {}),
     ...(blockedBy.length ? { blocked_by: [...blockedBy] } : {}),
     ...(blocks.length ? { blocks: [...blocks] } : {}),
   };
@@ -831,4 +834,154 @@ export function checkHumanTasks(paths: BusPaths): Task[] {
   }
 
   return result;
+}
+
+/**
+ * Return pending tasks that the given runtime is eligible to claim.
+ *
+ * Routing rules:
+ *   claude-code      → claims 'claude-only', 'either', or absent
+ *   codex-app-server → claims 'codex-ok', 'either', or absent
+ *   anything else    → claims 'either' or absent (conservative fallback)
+ *
+ * Tasks with a preference that explicitly excludes the caller's runtime
+ * are filtered out so agents don't waste claim attempts on incompatible work.
+ */
+export function getTasksForRuntime(
+  paths: BusPaths,
+  agentRuntime: string,
+  filters?: { agent?: string; respectDeps?: boolean },
+): Task[] {
+  const pending = listTasks(paths, {
+    status: 'pending',
+    agent: filters?.agent,
+    respectDeps: filters?.respectDeps,
+  });
+
+  return pending.filter(task => {
+    const pref = task.runtime_preference;
+    if (!pref || pref === 'either') return true;
+    if (agentRuntime === 'claude-code') return pref === 'claude-only';
+    if (agentRuntime === 'codex-app-server') return pref === 'codex-ok';
+    // Unknown runtime: only claim tasks without a hard constraint.
+    return false;
+  });
+}
+
+export interface AgentRuntimeInfo {
+  name: string;
+  org: string;
+  runtime: 'claude-code' | 'codex-app-server' | 'hermes';
+  enabled: boolean;
+  running: boolean;
+  inProgressCount: number;
+}
+
+export function discoverAgentRuntimes(
+  frameworkRoot: string,
+  ctxRoot: string,
+  instanceId: string,
+): AgentRuntimeInfo[] {
+  const orgsDir = join(frameworkRoot, 'orgs');
+  const agents: AgentRuntimeInfo[] = [];
+
+  if (!existsSync(orgsDir)) return agents;
+
+  let orgNames: string[];
+  try {
+    orgNames = readdirSync(orgsDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+  } catch { return agents; }
+
+  const enabledFile = join(ctxRoot, 'config', 'enabled-agents.json');
+  let enabledData: Record<string, { enabled?: boolean }> = {};
+  if (existsSync(enabledFile)) {
+    try { enabledData = JSON.parse(readFileSync(enabledFile, 'utf-8')); } catch { /* skip */ }
+  }
+
+  for (const org of orgNames) {
+    const agentsDir = join(orgsDir, org, 'agents');
+    if (!existsSync(agentsDir)) continue;
+
+    let names: string[];
+    try { names = readdirSync(agentsDir); } catch { continue; }
+
+    for (const name of names) {
+      if (name.startsWith('_')) continue;
+      const configPath = join(agentsDir, name, 'config.json');
+      if (!existsSync(configPath)) continue;
+
+      let config: Record<string, unknown> = {};
+      try { config = JSON.parse(readFileSync(configPath, 'utf-8')); } catch { continue; }
+
+      const runtime = (config['runtime'] as string) || 'claude-code';
+      const enabled = enabledData[name]?.enabled !== false && config['enabled'] !== false;
+
+      const taskDir = join(ctxRoot, 'orgs', org, 'tasks');
+      let inProgress = 0;
+      try {
+        const files = readdirSync(taskDir).filter(f => f.startsWith('task_') && f.endsWith('.json'));
+        for (const f of files) {
+          try {
+            const t = JSON.parse(readFileSync(join(taskDir, f), 'utf-8')) as Task;
+            if (t.assigned_to === name && t.status === 'in_progress') inProgress++;
+          } catch { /* skip */ }
+        }
+      } catch { /* no task dir */ }
+
+      agents.push({
+        name,
+        org,
+        runtime: runtime as AgentRuntimeInfo['runtime'],
+        enabled,
+        running: true,
+        inProgressCount: inProgress,
+      });
+    }
+  }
+
+  return agents;
+}
+
+export function routeTask(
+  frameworkRoot: string,
+  ctxRoot: string,
+  instanceId: string,
+  paths: BusPaths,
+  callerAgent: string,
+  org: string,
+  title: string,
+  options: {
+    description?: string;
+    priority?: Priority;
+    project?: string;
+    runtimePreference: 'codex-ok' | 'claude-only' | 'either';
+    excludeAgents?: string[];
+  },
+): { taskId: string; assignedTo: string; runtime: string } {
+  const { runtimePreference, excludeAgents = [], ...taskOpts } = options;
+  const allAgents = discoverAgentRuntimes(frameworkRoot, ctxRoot, instanceId);
+  const eligible = allAgents.filter(a => {
+    if (!a.enabled) return false;
+    if (excludeAgents.includes(a.name)) return false;
+    if (runtimePreference === 'claude-only') return a.runtime === 'claude-code';
+    if (runtimePreference === 'codex-ok') return a.runtime === 'codex-app-server';
+    return true;
+  });
+
+  if (eligible.length === 0) {
+    throw new Error(`No eligible agent found for runtime_preference='${runtimePreference}'`);
+  }
+
+  eligible.sort((a, b) => a.inProgressCount - b.inProgressCount);
+  const best = eligible[0];
+
+  const taskId = createTask(paths, callerAgent, org, title, {
+    ...taskOpts,
+    assignee: best.name,
+    runtimePreference,
+  });
+
+  return { taskId, assignedTo: best.name, runtime: best.runtime };
 }

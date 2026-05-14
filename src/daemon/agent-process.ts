@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync } from 'fs';
 import { join, sep } from 'path';
 import { homedir } from 'os';
+import { execSync } from 'child_process';
 import type { AgentConfig, AgentStatus, CtxEnv } from '../types/index.js';
 import { AgentPTY } from '../pty/agent-pty.js';
 import { CodexAppServerPTY } from '../pty/codex-app-server-pty.js';
@@ -91,6 +92,11 @@ export class AgentProcess {
       writeCortextosEnv(this.env.agentDir, this.env);
     }
 
+    // Bug A (COR-010) fix: kill any stale PID from a previous daemon incarnation
+    // before spawning a new process. Without this, pm2 restart leaves orphan
+    // model processes that silently burn tokens.
+    this.killStalePid();
+
     // Determine start mode
     const mode = this.shouldContinue() ? 'continue' : 'fresh';
     const prompt = mode === 'fresh'
@@ -166,6 +172,10 @@ export class AgentProcess {
       this.status = 'running';
       this.sessionStart = new Date();
       this.log(`Running (pid: ${this.pty.getPid()})`);
+
+      // Bug A (COR-010) fix: persist PID to disk so the next daemon incarnation
+      // can find and kill this process if it becomes orphaned.
+      this.persistPid(this.pty.getPid());
 
       // Start session timer
       this.startSessionTimer();
@@ -423,6 +433,17 @@ export class AgentProcess {
       return;
     }
 
+    // Bug B (COR-012) fix: check .user-stop before crash recovery. If the agent
+    // was manually stopped via `cortextos stop`, the orphaned PTY's exit should
+    // NOT trigger a respawn. Without this, killing an orphan process causes the
+    // daemon to restart an agent the user explicitly stopped.
+    if (this.isUserStopped()) {
+      this.log('Respawn skipped — .user-stop flag present');
+      this.status = 'stopped';
+      this.notifyStatusChange();
+      return;
+    }
+
     // Check crash limit
     this.crashCount++;
     const today = new Date().toISOString().split('T')[0];
@@ -466,7 +487,6 @@ export class AgentProcess {
     const forceFreshPath = join(this.env.ctxRoot, 'state', this.name, '.force-fresh');
     if (existsSync(forceFreshPath)) {
       try {
-        const { unlinkSync } = require('fs');
         unlinkSync(forceFreshPath);
       } catch { /* ignore */ }
       return false;
@@ -487,7 +507,7 @@ export class AgentProcess {
     );
 
     try {
-      const files = require('fs').readdirSync(convDir);
+      const files = readdirSync(convDir);
       return files.some((f: string) => f.endsWith('.jsonl'));
     } catch {
       return false;
@@ -534,7 +554,7 @@ export class AgentProcess {
     const nowUtc = new Date().toISOString();
     const reminderBlock = this.buildReminderBlock();
     const deliverablesBlock = this.buildDeliverablesBlock();
-    return `SESSION CONTINUATION: Your CLI process was restarted with --continue to reload configs. Current UTC time: ${nowUtc}. Your full conversation history is preserved. Re-read AGENTS.md and ALL bootstrap files listed there. External crons are auto-loaded by the daemon — do NOT call CronCreate or CronList for cron restoration.${reminderBlock}${deliverablesBlock} Check inbox. Resume normal operations. After checking inbox, send a Telegram message to the user saying you are back online.`;
+    return `SESSION CONTINUATION: Your CLI process was restarted with --continue to reload configs. Current UTC time: ${nowUtc}. Your full conversation history is preserved. Do NOT re-read bootstrap files — your conversation already has them. External crons are auto-loaded by the daemon — do NOT call CronCreate or CronList for cron restoration.${reminderBlock}${deliverablesBlock} Check inbox. Resume normal operations. Do NOT send a Telegram back-online message — the user already knows you are running.`;
   }
 
   /**
@@ -719,6 +739,89 @@ export class AgentProcess {
     if (this.onStatusChange) {
       this.onStatusChange(this.getStatus());
     }
+  }
+
+  /**
+   * Bug A (COR-010) fix: kill any stale PID from a previous daemon incarnation.
+   *
+   * On pm2 restart, the old daemon's SIGTERM handler may not reach all PTYs
+   * before the process dies. The new daemon spawns fresh PTYs, leaving the old
+   * ones alive as orphans that silently burn tokens. This method reads the PID
+   * persisted by the previous start(), checks if it's still alive, and kills it
+   * before the new PTY is spawned.
+   */
+  private killStalePid(): void {
+    const pidFile = join(this.env.ctxRoot, 'state', this.name, '.pid');
+    if (!existsSync(pidFile)) return;
+
+    let stalePid: number;
+    try {
+      stalePid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+      if (isNaN(stalePid) || stalePid <= 0) return;
+    } catch {
+      return;
+    }
+
+    // Check if the PID is still alive
+    try {
+      process.kill(stalePid, 0); // signal 0 = existence check
+    } catch {
+      // Process is dead — clean up the stale PID file
+      try { unlinkSync(pidFile); } catch { /* ignore */ }
+      return;
+    }
+
+    // PID is alive — kill it
+    this.log(`Killing stale PID ${stalePid} from previous daemon`);
+    try {
+      process.kill(stalePid, 'SIGTERM');
+    } catch {
+      return; // Can't kill — possibly a permission issue
+    }
+
+    // Wait up to 5s for SIGTERM, then SIGKILL
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(stalePid, 0);
+        // Still alive — busy-wait briefly
+        execSync('sleep 0.5', { stdio: 'ignore' });
+      } catch {
+        // Dead — success
+        this.log(`Stale PID ${stalePid} terminated`);
+        try { unlinkSync(pidFile); } catch { /* ignore */ }
+        return;
+      }
+    }
+
+    // Still alive after 5s — SIGKILL
+    this.log(`Stale PID ${stalePid} did not exit after SIGTERM — sending SIGKILL`);
+    try {
+      process.kill(stalePid, 'SIGKILL');
+    } catch { /* ignore */ }
+    try { unlinkSync(pidFile); } catch { /* ignore */ }
+  }
+
+  /**
+   * Bug A (COR-010) fix: persist the current PTY PID to disk.
+   * The next daemon incarnation reads this in killStalePid().
+   */
+  private persistPid(pid: number): void {
+    try {
+      const stateDir = join(this.env.ctxRoot, 'state', this.name);
+      ensureDir(stateDir);
+      writeFileSync(join(stateDir, '.pid'), String(pid), 'utf-8');
+    } catch { /* don't break start on PID write failure */ }
+  }
+
+  /**
+   * Bug B (COR-012) fix: check if a .user-stop marker exists in the agent's
+   * state dir. If present, handleExit() skips crash recovery — the agent was
+   * intentionally stopped and should not be respawned.
+   */
+  private isUserStopped(): boolean {
+    const marker = join(this.env.ctxRoot, 'state', this.name, '.user-stop');
+    return existsSync(marker);
   }
 }
 

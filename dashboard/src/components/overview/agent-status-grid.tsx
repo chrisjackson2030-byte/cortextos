@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HealthDot } from '@/components/shared/health-dot';
+import { AgentAvatar } from '@/components/shared/agent-avatar';
 import { IconRobot, IconChevronRight } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 import type { AgentSummary, Heartbeat } from '@/lib/types';
@@ -47,9 +48,7 @@ export function AgentStatusGrid({ agents, heartbeats }: AgentStatusGridProps) {
                   "border-l-destructive/40",
                 )}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-sm">
-                  {agent.emoji || displayAgentName(agent.name).charAt(0)}
-                </div>
+                <AgentAvatar name={agent.name} emoji={agent.emoji} systemName={systemName} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium font-mono truncate">

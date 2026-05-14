@@ -220,7 +220,12 @@ async function main(): Promise<void> {
           if (Date.now() - statSync(markerPath).mtimeMs < 60_000) markerFresh = true;
         } catch { /* ignore */ }
       }
-      try { unlinkSync(markerPath); } catch { /* ignore */ }
+      // Bug C (COR-012) fix: .user-stop is persistent state — the daemon checks
+      // it on startup and in crash recovery to decide whether to respawn. Deleting
+      // it here would let the next daemon restart spawn an agent the user stopped.
+      if (marker.file !== '.user-stop') {
+        try { unlinkSync(markerPath); } catch { /* ignore */ }
+      }
     }
   }
 
@@ -378,7 +383,7 @@ async function main(): Promise<void> {
       lastTask,
       crashCount,
       restartAttempted,
-      recipients: ['chief', 'analyst'],
+      recipients: ['jarvis', 'analyst'],
     });
   }
 }

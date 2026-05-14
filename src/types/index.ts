@@ -59,6 +59,8 @@ export interface Task {
   result?: string;
   /** Linked deliverables (files saved via `cortextos bus save-output`). */
   outputs?: TaskOutput[];
+  /** Runtime routing hint: 'claude-only' forces Claude, 'codex-ok' forces Codex, 'either' lets route-task decide based on usage. */
+  runtime_preference?: 'codex-ok' | 'claude-only' | 'either';
   /**
    * Dependency DAG edges (beads-inspired). Optional so existing task
    * files remain valid with these fields absent. `blocked_by` lists
