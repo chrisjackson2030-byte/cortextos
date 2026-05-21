@@ -17,14 +17,22 @@ import type { BusPaths, TelegramMessage } from '../types/index.js';
  * - `parseMode`: which parse_mode the first send attempt used. "html"
  *   for the default path (Markdown-to-HTML conversion), "none" when the
  *   caller used --plain-text.
+ * - `frameworkRoot` + `org`: when provided, also writes to the canonical
+ *   telegram-outbox.jsonl at {frameworkRoot}/orgs/{org}/agents/{agentName}/state/
+ *   so both Nova (outbound-messages.jsonl) and Strategist (telegram-outbox.jsonl)
+ *   see every outbound message regardless of invocation path.
  */
 export interface OutboundLogMetadata {
   parseMode?: 'html' | 'none';
+  frameworkRoot?: string;
+  org?: string;
 }
 
 /**
  * Append an outbound message to the agent's JSONL log.
- * Path: {ctxRoot}/logs/{agentName}/outbound-messages.jsonl
+ * Primary path:  {ctxRoot}/logs/{agentName}/outbound-messages.jsonl
+ * Outbox mirror: {frameworkRoot}/orgs/{org}/agents/{agentName}/state/telegram-outbox.jsonl
+ *   (written when metadata.frameworkRoot + metadata.org are both provided)
  */
 export function logOutboundMessage(
   ctxRoot: string,
@@ -42,8 +50,9 @@ export function logOutboundMessage(
   const meta: Record<string, unknown> = {};
   if (metadata?.parseMode !== undefined) meta.parse_mode = metadata.parseMode;
 
+  const ts = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const entry = JSON.stringify({
-    timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    timestamp: ts,
     agent: agentName,
     chat_id: String(chatId),
     text,
@@ -52,6 +61,22 @@ export function logOutboundMessage(
   });
 
   appendFileSync(join(logDir, 'outbound-messages.jsonl'), entry + '\n', 'utf-8');
+
+  // Dual-write to telegram-outbox.jsonl so Strategist reads the same messages.
+  if (metadata?.frameworkRoot && metadata?.org) {
+    const outboxDir = join(metadata.frameworkRoot, 'orgs', metadata.org, 'agents', agentName, 'state');
+    mkdirSync(outboxDir, { recursive: true });
+    const outboxPath = join(outboxDir, 'telegram-outbox.jsonl');
+    const outboxEntry = JSON.stringify({ ts, to: String(chatId), text });
+    appendFileSync(outboxPath, outboxEntry + '\n', 'utf-8');
+    // Rolling 200-line cap (mirrors bus/send-telegram.sh behaviour)
+    try {
+      const lines = readFileSync(outboxPath, 'utf-8').split('\n').filter(Boolean);
+      if (lines.length > 200) {
+        writeFileSync(outboxPath, lines.slice(-200).join('\n') + '\n', 'utf-8');
+      }
+    } catch { /* non-fatal: trim failure leaves file intact */ }
+  }
 }
 
 /**
