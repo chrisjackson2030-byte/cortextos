@@ -314,9 +314,29 @@ export class AgentPTY {
       args.push('--continue');
     }
 
-    // --permission-mode bypassPermissions is equivalent to --dangerously-skip-permissions
-    // but does not show the interactive confirmation prompt added in CC 2.1+.
-    args.push('--permission-mode', 'bypassPermissions');
+    // Skip Claude Code's permission system by default (back-compat: agents have
+    // historically run unattended). Set `dangerously_skip_permissions: false` in
+    // the agent config to KEEP the gate on — then Claude Code's PermissionRequest
+    // flow (and the hook-permission-telegram approval) actually engages. Without
+    // this flag the CLI override would suppress any settings.json permission mode.
+    // Only the literal boolean `false` disables the skip; warn on a non-boolean so
+    // a typo (e.g. the string "false") can't silently leave an agent ungated when
+    // the operator intended to engage the gate.
+    //
+    // When skipping, use `--permission-mode bypassPermissions` rather than
+    // `--dangerously-skip-permissions`: it is equivalent but does NOT show the
+    // interactive confirmation prompt added in CC 2.1+, which would otherwise
+    // hang a headless daemon agent.
+    const skipPermissions = this.config.dangerously_skip_permissions;
+    if (skipPermissions !== undefined && typeof skipPermissions !== 'boolean') {
+      console.warn(
+        `[agent-pty] ${this.env.agentName}: dangerously_skip_permissions must be true or false ` +
+        `(got ${JSON.stringify(skipPermissions)}); defaulting to skip-on.`,
+      );
+    }
+    if (skipPermissions !== false) {
+      args.push('--permission-mode', 'bypassPermissions');
+    }
 
     if (this.config.model) {
       args.push('--model', this.config.model);
