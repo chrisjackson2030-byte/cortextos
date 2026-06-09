@@ -26,7 +26,65 @@ import { resolveEnv } from '../utils/env.js';
 import { IPCClient } from '../daemon/ipc-server.js';
 import { TelegramAPI } from '../telegram/api.js';
 import { logOutboundMessage, cacheLastSent } from '../telegram/logging.js';
+import { checkHooksForBlock } from '../bus/hooks.js';
 import type { Priority, Task, TaskStatus, EventCategory, EventSeverity, ApprovalCategory, ApprovalStatus, OrgContext, CronDefinition } from '../types/index.js';
+
+/**
+ * Run verify-deliverable.py against task result text + task description.
+ * Returns an error message if verification FAILS for high-risk tasks, or null if allowed.
+ * L2+ (priority high/urgent): BLOCKED on FAIL.
+ * L0/L1 (priority normal/low): WARN only.
+ */
+function checkCitationVerification(taskId: string, resultText: string | undefined, taskDir: string): string | null {
+  if (!resultText) return null;
+
+  const verifierPath = join(__dirname, '..', 'bus', 'verify-deliverable.py');
+  if (!existsSync(verifierPath)) return null;
+
+  // Load task for priority and description (Gate 1 needs ACCEPT: block from desc)
+  const taskFile = join(taskDir, `${taskId}.json`);
+  let priority = 'normal';
+  let description = '';
+  try {
+    const task: Task = JSON.parse(readFileSync(taskFile, 'utf-8'));
+    priority = task.priority || 'normal';
+    description = task.description || '';
+  } catch { /* defaults */ }
+
+  const hasCitations = /\[CITE:[^\]]+\]/.test(resultText);
+  const hasAcceptBlock = /ACCEPT:/.test(description);
+
+  // Nothing to verify: no citations AND no acceptance criteria
+  if (!hasCitations && !hasAcceptBlock) return null;
+
+  try {
+    const args = ['python3', verifierPath, '--stdin', '--timeout', '15'];
+    if (description) {
+      args.push('--desc', description);
+    }
+
+    const proc = spawnSync(args[0], args.slice(1), {
+      input: resultText,
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+
+    if (proc.status === 0) return null;
+
+    const isHighRisk = priority === 'high' || priority === 'urgent';
+    const output = (proc.stdout || '') + (proc.stderr || '');
+    const verdictLine = output.split('\n').find(l => l.startsWith('VERDICT:')) || 'VERDICT: FAIL';
+
+    if (isHighRisk) {
+      return `Citation verification FAILED for task ${taskId} (priority=${priority}, BLOCKED):\n${verdictLine}\nFull report:\n${output}`;
+    }
+
+    console.error(`WARNING: Citation verification failed for task ${taskId} (priority=${priority}, allowed through):\n${verdictLine}`);
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Check if the org requires deliverables and the task has none attached.
@@ -373,7 +431,7 @@ busCommand
   .argument('<id>', 'Task ID')
   .argument('[result]', 'Completion result (optional positional form)')
   .option('--result <text>', 'Completion result')
-  .action((id: string, resultArg: string | undefined, opts: { result?: string }) => {
+  .action(async (id: string, resultArg: string | undefined, opts: { result?: string }) => {
     // Accept result as either positional arg or --result flag (P1 fix #8)
     const effectiveResult = opts.result ?? resultArg;
     const env = resolveEnv();
@@ -384,6 +442,33 @@ busCommand
       const err = checkDeliverableRequirement(id, env.frameworkRoot, env.org, paths.taskDir);
       if (err) {
         console.error(err);
+        process.exit(1);
+      }
+    }
+
+    // Guard: verify citations in completion result (dual-gate fabrication defense)
+    const citeErr = checkCitationVerification(id, effectiveResult, paths.taskDir);
+    if (citeErr) {
+      console.error(citeErr);
+      process.exit(1);
+    }
+
+    // Guard: run hook handlers — a registered handler can block task completion
+    if (env.org) {
+      const orgPath = join(env.frameworkRoot, 'orgs', env.org);
+      const hookEvent = {
+        id: `complete-${id}-${Date.now()}`,
+        category: 'task' as const,
+        event: 'task_complete_attempt',
+        severity: 'info' as const,
+        agent: env.agentName,
+        org: env.org,
+        timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        metadata: { task_id: id, result_length: effectiveResult?.length ?? 0 },
+      };
+      const blockResult = await checkHooksForBlock(orgPath, hookEvent, env.agentName);
+      if (blockResult) {
+        console.error(`Hook BLOCKED completion of task ${id}: ${blockResult.reason ?? 'no reason'}`);
         process.exit(1);
       }
     }
@@ -1135,6 +1220,8 @@ busCommand
       if (env.agentName && env.ctxRoot) {
         logOutboundMessage(env.ctxRoot, env.agentName, chatId, message, sentMessageId, {
           parseMode: opts.plainText ? 'none' : 'html',
+          frameworkRoot: env.frameworkRoot || undefined,
+          org: env.org || undefined,
         });
         cacheLastSent(env.ctxRoot, env.agentName, chatId, message);
         // Auto-emit activity event so dashboard sees every Telegram send,
@@ -2585,6 +2672,26 @@ busCommand
   .command('hook-loop-detector')
   .description('PreToolUse hook: detects and blocks repeated tool loops (same-args repetition + ping-pong alternation)')
   .action(() => runHook('hook-loop-detector'));
+
+busCommand
+  .command('hook-record-claim')
+  .description('PostToolUse hook (W12): records structured claim annotations to state/<agent>/claims.db')
+  .action(() => runHook('hook-record-claim'));
+
+busCommand
+  .command('hook-warn-contradicting-claim')
+  .description('PreToolUse hook (W12): warns before Telegram send if message contradicts a recent claim')
+  .action(() => runHook('hook-warn-contradicting-claim'));
+
+busCommand
+  .command('hook-record-source-query')
+  .description('PostToolUse hook (FIX1): logs source-queries (Read/sqlite3/get_balance/...) to state/<agent>/source_log.db')
+  .action(() => runHook('hook-record-source-query'));
+
+busCommand
+  .command('hook-verify-before-assert')
+  .description('PreToolUse hook (FIX1): BLOCKS a Telegram send that asserts a major claim with no recent source-query (fail-open)')
+  .action(() => runHook('hook-verify-before-assert'));
 
 // --- OAuth token rotation commands ---
 

@@ -102,42 +102,40 @@ export default function LoginPage() {
     body.set('password', passwordInput?.value || '');
 
     try {
-      const res = await fetch(form.action, {
+      // redirect:'manual' — do NOT follow next-auth's post-auth 302. Without
+      // AUTH_URL set, next-auth builds that redirect against localhost:3000, and
+      // following it from a phone/LAN/Tailscale origin hits the *device's* own
+      // localhost and throws "Load failed" — the real cause of the network error
+      // when signing in from anywhere but the Mac. We instead verify success by
+      // reading the session, which is origin-independent.
+      await fetch(form.action, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
         credentials: 'same-origin',
-        redirect: 'follow',
-      });
-      if (res.redirected) {
-        const target = new URL(res.url);
-        if (target.pathname.startsWith('/login')) {
-          const code = target.searchParams.get('error') || 'Unknown';
-          // CallbackRouteError usually means the rate limiter blocked the request.
-          // Show a human-readable message instead of the raw error code.
-          const msg = code === 'CallbackRouteError'
-            ? 'Too many attempts. Please wait a few minutes and try again.'
-            : `Sign-in failed: ${code}`;
-          setError(msg);
-          setLoading(false);
-          return;
-        }
-        // Navigate to the original destination the user tried to reach, or /
-        // if none was recorded. Use window.location.origin to build a safe
-        // relative-only target — res.url can be http://localhost:3000/ behind
-        // a reverse proxy (when AUTH_URL is not set), which would send the
-        // browser to the wrong host.
+        redirect: 'manual',
+      }).catch(() => {});
+
+      // Source of truth: did a session get established?
+      const sess = await fetch('/api/auth/session', { credentials: 'same-origin' })
+        .then((r) => r.json())
+        .catch(() => null);
+
+      if (sess && sess.user) {
+        // Navigate within the CURRENT origin (whatever host the user is on).
         const callbackParam = new URL(window.location.href).searchParams.get('callbackUrl');
-        // Validate same-origin: must start with / but not // (which is a protocol-relative URL)
-        const safeTarget = callbackParam && callbackParam.startsWith('/') && !callbackParam.startsWith('//') ? callbackParam : '/';
+        const safeTarget =
+          callbackParam && callbackParam.startsWith('/') && !callbackParam.startsWith('//')
+            ? callbackParam
+            : '/';
         window.location.href = safeTarget;
         return;
       }
-      if (res.ok) {
-        window.location.href = '/';
-        return;
-      }
-      setError(`Sign-in failed with status ${res.status}`);
+
+      // No session — bad credentials or rate-limited.
+      setError(
+        'Sign-in failed — check your username/password. If you tried several times, wait a few minutes (rate limit) and retry.',
+      );
       setLoading(false);
     } catch (err) {
       console.error('[login] submit error:', err);

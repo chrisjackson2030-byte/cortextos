@@ -493,6 +493,30 @@ Reply using: cortextos bus send-telegram 7940429114 '<your reply>'
 
     internals.handleRpcMessage({ method: 'turn/completed', params: {} });
   });
+
+  it('passes configured model on turn/start so app-server turns do not fall back to the default model', async () => {
+    requestMock.mockResolvedValue({ result: {} });
+    const pty = new CodexAppServerPTY(mockEnv, { model: 'gpt-5.4' });
+    (pty as unknown as { _alive: boolean })._alive = true;
+    (pty as unknown as { _threadId: string })._threadId = 'thread-1';
+    (pty as unknown as { _rpc: { request: typeof requestMock; respondError: typeof respondErrorMock } })._rpc = {
+      request: requestMock,
+      respondError: respondErrorMock,
+    };
+
+    pty.write('first');
+    pty.write('\r');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(requestMock).toHaveBeenCalledWith('turn/start', {
+      threadId: 'thread-1',
+      input: [{ type: 'text', text: 'first', text_elements: [] }],
+      model: 'gpt-5.4',
+      approvalPolicy: 'never',
+      sandboxPolicy: { type: 'dangerFullAccess' },
+    });
+  });
 });
 
 describe('CodexAppServerPTY extractTelegramPayload media types', () => {
@@ -808,6 +832,25 @@ describe('CodexAppServerPTY thread lifecycle', () => {
     );
   });
 
+  it('passes configured model when starting a new thread', async () => {
+    requestMock.mockResolvedValue({ result: { thread: { id: 'fresh-thread' } } });
+    const pty = new CodexAppServerPTY(mockEnv, { model: 'gpt-5.4' });
+    (pty as unknown as { _rpc: { request: typeof requestMock } })._rpc = { request: requestMock };
+
+    await (pty as unknown as { startOrResumeThread(mode: 'fresh' | 'continue'): Promise<void> }).startOrResumeThread('fresh');
+
+    expect(requestMock).toHaveBeenCalledWith('thread/start', {
+      cwd: '/tmp/fw/orgs/acme/agents/codex-app-agent',
+      approvalPolicy: 'never',
+      sandbox: 'danger-full-access',
+      model: 'gpt-5.4',
+      config: { features: { goals: true } },
+      sessionStartSource: 'startup',
+      experimentalRawEvents: false,
+      persistExtendedHistory: true,
+    });
+  });
+
   it('resumes the persisted thread in continue mode', async () => {
     fsMocks.existsSync.mockReturnValue(true);
     fsMocks.readFileSync.mockReturnValue(JSON.stringify({
@@ -816,7 +859,7 @@ describe('CodexAppServerPTY thread lifecycle', () => {
       updatedAt: '2026-05-07T00:00:00Z',
     }));
     requestMock.mockResolvedValue({ result: { thread: { id: 'persisted-thread' } } });
-    const pty = new CodexAppServerPTY(mockEnv, {});
+    const pty = new CodexAppServerPTY(mockEnv, { model: 'gpt-5.4' });
     (pty as unknown as { _rpc: { request: typeof requestMock } })._rpc = { request: requestMock };
 
     await (pty as unknown as { startOrResumeThread(mode: 'fresh' | 'continue'): Promise<void> }).startOrResumeThread('continue');
@@ -826,39 +869,18 @@ describe('CodexAppServerPTY thread lifecycle', () => {
       cwd: '/tmp/fw/orgs/acme/agents/codex-app-agent',
       approvalPolicy: 'never',
       sandbox: 'danger-full-access',
+      model: 'gpt-5.4',
       config: { features: { goals: true } },
       excludeTurns: true,
       persistExtendedHistory: true,
     });
   });
 
-  it('resumes the persisted thread in fresh mode when state exists', async () => {
-    fsMocks.existsSync.mockReturnValue(true);
-    fsMocks.readFileSync.mockReturnValue(JSON.stringify({
-      threadId: 'persisted-fresh-thread',
-      cwd: '/tmp/fw/orgs/acme/agents/codex-app-agent',
-      updatedAt: '2026-05-07T00:00:00Z',
-    }));
-    requestMock.mockResolvedValue({ result: { thread: { id: 'persisted-fresh-thread' } } });
-    const pty = new CodexAppServerPTY(mockEnv, {});
-    (pty as unknown as { _rpc: { request: typeof requestMock } })._rpc = { request: requestMock };
-
-    await (pty as unknown as { startOrResumeThread(mode: 'fresh' | 'continue'): Promise<void> }).startOrResumeThread('fresh');
-
-    expect(requestMock).toHaveBeenCalledWith('thread/resume', {
-      threadId: 'persisted-fresh-thread',
-      cwd: '/tmp/fw/orgs/acme/agents/codex-app-agent',
-      approvalPolicy: 'never',
-      sandbox: 'danger-full-access',
-      config: { features: { goals: true } },
-      excludeTurns: true,
-      persistExtendedHistory: true,
-    });
-    expect(requestMock).not.toHaveBeenCalledWith(
-      'thread/start',
-      expect.anything(),
-    );
-  });
+  // [removed 2026-06-09] 'resumes the persisted thread in fresh mode when state exists' —
+  // STALE: asserted the pre-FIX-#2 behavior (fresh+persisted → thread/resume). FIX-#2 makes
+  // fresh → thread/start; coverage is now in 'starts a new thread in fresh mode' (L812) +
+  // 'passes configured model when starting a new thread' (L835); resume covered by the
+  // 'resumes the persisted thread in continue mode' test.
 });
 
 describe('CodexAppServerPTY event handling', () => {

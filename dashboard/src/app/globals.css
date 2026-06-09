@@ -371,6 +371,16 @@ tr:hover td {
 }
 .animate-value-in { animation: value-in 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 
+/* Jarvis core arc-reactor ring rotation */
+@keyframes reactor-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes reactor-spin-rev {
+  from { transform: rotate(360deg); }
+  to   { transform: rotate(0deg); }
+}
+
 /* Agent card health states — Grafana-style borders + arc-reactor pulse */
 @keyframes agent-pulse-healthy {
   0%, 100% {

@@ -3,6 +3,8 @@ import { Sora, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SessionProvider } from "@/components/session-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { IosInstallHint } from "@/components/pwa/ios-install-hint";
+import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import "./globals.css";
 
 const sora = Sora({
@@ -43,6 +45,8 @@ export default function RootLayout({
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
             <TooltipProvider>
               {children}
+              <IosInstallHint />
+              <ServiceWorkerRegister />
             </TooltipProvider>
           </ThemeProvider>
         </SessionProvider>

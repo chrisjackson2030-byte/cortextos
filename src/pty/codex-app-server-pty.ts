@@ -105,6 +105,9 @@ export class CodexAppServerPTY {
   } | null = null;
   private _spawnFn: SpawnFn | null = null;
   private _appServerPty: IPty | null = null;
+  private _ptyDataDisposable: { dispose(): void } | null = null;
+  private _ptyExitDisposable: { dispose(): void } | null = null;
+  private _killing = false;
   private _rpc: WsUnixJsonRpcClient | null = null;
   private _onExitHandler: ((exitCode: number, signal?: number) => void) | null = null;
   private _outputBuffer: OutputBuffer;
@@ -181,6 +184,8 @@ export class CodexAppServerPTY {
   }
 
   kill(): void {
+    if (this._killing) return;          // idempotent: double-kill = double native-free = EXC_BAD_ACCESS
+    this._killing = true;
     this._alive = false;
     this._turnQueue = [];
     this.rejectTurnCompletion(new Error('Codex app-server stopped'));
@@ -188,17 +193,23 @@ export class CodexAppServerPTY {
       this._rpc.close();
       this._rpc = null;
     }
+    // Dispose native listeners BEFORE kill so node-pty cannot fire a JS callback into a torn-down pty.
+    this._ptyDataDisposable?.dispose();
+    this._ptyDataDisposable = null;
+    this._ptyExitDisposable?.dispose();
+    this._ptyExitDisposable = null;
     if (this._appServerPty) {
       try {
         this._appServerPty.kill();
       } catch {
-        // Ignore shutdown errors.
+        // Ignore JS-level shutdown errors (native EXC_BAD_ACCESS is not catchable here).
       }
       this._appServerPty = null;
     }
     this.removeSocket();
     this._onExitHandler?.(0, undefined);
     this._onExitHandler = null;
+    this._killing = false;              // allow a future respawn→kill cycle
   }
 
   isAlive(): boolean {
@@ -432,14 +443,19 @@ export class CodexAppServerPTY {
       });
 
       this._appServerPty = pty;
-      pty.onData((data) => {
+      this._ptyDataDisposable = pty.onData((data) => {
         this._outputBuffer.push(data);
         if (data.includes('Error:')) {
           reject(new Error(data.trim()));
         }
       });
-      pty.onExit(({ exitCode, signal }) => {
+      this._ptyExitDisposable = pty.onExit(({ exitCode, signal }) => {
         if (this._appServerPty !== pty) return;
+        // Process already reaped: dispose listeners and DO NOT call kill() on it.
+        this._ptyDataDisposable?.dispose();
+        this._ptyDataDisposable = null;
+        this._ptyExitDisposable?.dispose();
+        this._ptyExitDisposable = null;
         this._appServerPty = null;
         this._alive = false;
         this.rejectTurnCompletion(new Error('Codex app-server exited'));
@@ -478,21 +494,24 @@ export class CodexAppServerPTY {
   }
 
   private async startOrResumeThread(mode: 'fresh' | 'continue'): Promise<void> {
-    const persisted = this.readThreadState();
-    if (persisted) {
-      try {
-        const resumed = await this.request<ThreadResponse>('thread/resume', {
-          threadId: persisted.threadId,
-          cwd: this._cwd,
-          ...THREAD_PERMISSION_OVERRIDES,
-          config: { features: { goals: true } },
-          excludeTurns: true,
-          persistExtendedHistory: true,
-        });
-        this.setThreadId(resumed.result?.thread.id || persisted.threadId);
-        return;
-      } catch (err) {
-        this._outputBuffer.push(`[codex-app-server] persisted resume failed: ${err}\n`);
+    if (mode === 'continue') {
+      const persisted = this.readThreadState();
+      if (persisted) {
+        try {
+          const resumed = await this.request<ThreadResponse>('thread/resume', {
+            threadId: persisted.threadId,
+            cwd: this._cwd,
+            ...THREAD_PERMISSION_OVERRIDES,
+            ...(this._config.model ? { model: this._config.model } : {}),  // FIX #2: override resumed-thread model
+            config: { features: { goals: true } },
+            excludeTurns: true,
+            persistExtendedHistory: true,
+          });
+          this.setThreadId(resumed.result?.thread.id || persisted.threadId);
+          return;
+        } catch (err) {
+          this._outputBuffer.push(`[codex-app-server] persisted resume failed: ${err}\n`);
+        }
       }
     }
 
@@ -503,6 +522,7 @@ export class CodexAppServerPTY {
           threadId: latest,
           cwd: this._cwd,
           ...THREAD_PERMISSION_OVERRIDES,
+          ...(this._config.model ? { model: this._config.model } : {}),  // FIX #2: override resumed-thread model
           config: { features: { goals: true } },
           excludeTurns: true,
           persistExtendedHistory: true,
@@ -515,6 +535,7 @@ export class CodexAppServerPTY {
     const started = await this.request<ThreadResponse>('thread/start', {
       cwd: this._cwd,
       ...THREAD_PERMISSION_OVERRIDES,
+      ...(this._config.model ? { model: this._config.model } : {}),  // FIX #2: ThreadStartParams.model (top-level)
       config: { features: { goals: true } },
       sessionStartSource: 'startup',
       experimentalRawEvents: false,
@@ -558,7 +579,15 @@ export class CodexAppServerPTY {
   private async startTurn(input: unknown[]): Promise<void> {
     if (!this._threadId) throw new Error('No Codex app-server thread is active');
     const completion = this.createTurnCompletion();
-    await this.request('turn/start', { threadId: this._threadId, input, ...TURN_PERMISSION_OVERRIDES });
+    // FIX #2 (2026-06-03): the app-server defaults turns to gpt-5.3-codex (API-only) -> 400 on a
+    // ChatGPT account. TurnStartParams.model (verified in codex 0.130.0 app-server JSON schema:
+    // "Override the model for this turn and subsequent turns") is the authoritative per-turn control;
+    // config.toml / -c / thread state did NOT change the turn model (Jarvis tested). Set it here.
+    await this.request('turn/start', {
+      threadId: this._threadId, input,
+      ...(this._config.model ? { model: this._config.model } : {}),
+      ...TURN_PERMISSION_OVERRIDES,
+    });
     await completion;
   }
 

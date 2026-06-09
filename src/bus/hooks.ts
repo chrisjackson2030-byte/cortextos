@@ -1,14 +1,12 @@
-// added 2026-04-29 by collie via dane dispatch — RFC #15 minimal stub; dispatcher wiring pending Aussie/Codex Thu execution
-//
-// Bus hook framework — registry loader, event matcher, dispatcher stub.
+// Bus hook framework — registry loader, event matcher, dispatcher.
 // Schema lives at orgs/<org>/hooks.json. Per RFC #15 §4, this file is the
-// in-process surface that fast-checker will eventually call on every logged
-// event. Today nothing is wired — loadHookRegistry + matchHooks return data,
-// dispatchHook only logs the would-be invocation.
+// in-process surface for event-driven hooks. dispatchHook runs registered
+// handlers and returns HandlerResult (fire/block/escalate). Built-in bash
+// handler auto-registered at module load. complete-task honors block results.
 
 import { existsSync, readFileSync, appendFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { execFile } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import type { Event, EventCategory, EventSeverity } from '../types/index.js';
 
 // ── Schema types — mirror RFC #15 §4 ─────────────────────────────────────────
@@ -220,19 +218,11 @@ function deepEqual(a: unknown, b: unknown): boolean {
 /**
  * Dispatch a matched hook against an event.
  *
- * Day-1 (stub): no handlers registered → logged-and-fired.
- * Day-2 (this commit): handlers may be registered via `registerHandler(type, fn)`.
- *   Their HandlerResult drives which bus event fires:
- *     - `{action: 'fire'}` (or undefined return) → emits `hook_fire`
- *     - `{action: 'block', reason}` → emits `hook_block`
- *     - `{action: 'escalate', reason}` → emits `hook_escalate`
- *   A handler that throws is caught and treated as `block` with `reason: 'handler_threw: <msg>'`.
- *
- * Day-3+ (Codex Thu): the per-HandlerType built-in implementations
- * (log_event / send_message / bash / webhook) register themselves at module
- * init using this same `registerHandler` API. No further dispatcher changes.
+ * Dispatches a matched hook. Runs the registered handler for the hook's
+ * handler_type. Returns the HandlerResult so callers can honor block/escalate.
+ * A handler that throws is caught and treated as block.
  */
-export async function dispatchHook(hook: HookEntry, event: Event): Promise<void> {
+export async function dispatchHook(hook: HookEntry, event: Event): Promise<HandlerResult> {
   // Always write the local activity-log line (Day-1 behavior) for postmortem/audit.
   logHookAttempt(hook, event);
 
@@ -273,6 +263,31 @@ export async function dispatchHook(hook: HookEntry, event: Event): Promise<void>
     source_agent: event.agent,
     outcome: result.reason ?? `${result.action}_no_reason`,
   });
+
+  return result;
+}
+
+/**
+ * Run all matching hooks for an event and return the first block result (if any).
+ * Returns null if all hooks pass (fire) or no hooks match.
+ * Fail-open: registry errors, missing files, or exceptions return null.
+ */
+export async function checkHooksForBlock(
+  orgPath: string,
+  event: Event,
+  agentName: string,
+): Promise<HandlerResult | null> {
+  try {
+    const registry = loadHookRegistry(orgPath);
+    const matched = matchHooks(registry, event, agentName);
+    for (const hook of matched) {
+      const result = await dispatchHook(hook, event);
+      if (result.action === 'block') return result;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Logging helpers (best-effort, never throw) ───────────────────────────────
@@ -355,7 +370,20 @@ function appendActivityLine(scope: string, line: string): void {
   }
 }
 
-// Silence unused-import tsc warnings for symbols reserved for the upcoming
-// dispatcher implementation (handler dispatch will use `dirname` to resolve
-// relative paths in bash-handler templates per RFC #15 §5).
+// ── Built-in handlers (RFC #15 Day-3 wiring) ──────────────────────────────────
+
+const bashHandler: HandlerFn = (hook, _event) => {
+  const cmd = hook.handler.command;
+  if (!cmd) return { action: 'fire', reason: 'no_command_in_handler' };
+  try {
+    const argv = cmd.split(/\s+/);
+    execFileSync(argv[0], argv.slice(1), { timeout: 10_000, stdio: 'pipe' });
+    return { action: 'fire', reason: 'bash_exit_0' };
+  } catch {
+    return { action: 'block', reason: `bash_nonzero: ${cmd}` };
+  }
+};
+
+registerHandler('bash', bashHandler);
+
 void dirname;

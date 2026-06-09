@@ -1,0 +1,840 @@
+/* Voice Console — Iron Man / Jarvis aesthetic */
+
+/* Single-screen cockpit. No scrolling — the whole scene is locked to the
+   viewport height (minus the dashboard's 4rem top padding) and clips overflow. */
+.scene {
+  position: relative;
+  width: 100%;
+  /* dvh (dynamic viewport) handles mobile browser chrome; 4.5rem accounts for the
+     Topbar + the main padding the scene only partly escapes, so the bottom of every
+     panel stays on-screen instead of being clipped below the fold. */
+  height: calc(100dvh - 4.5rem);
+  background: #0A0E17;
+  overflow: hidden;
+  margin: -1rem -1.25rem -1.25rem;
+  padding: 0;
+}
+
+@media (min-width: 1024px) {
+  .scene {
+    margin: -1.5rem;
+    /* was 100vh - 3rem, which under-counted the ~4rem Topbar and pushed every
+       panel's bottom ~1rem below the fold (the consistent cutoff). Match the base. */
+    height: calc(100dvh - 4.5rem);
+  }
+}
+
+/* Hero = the full single-screen voice-console (orb + side HUD panels). */
+.hero {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Highlight ring applied when Jarvis "pulls up" a panel via the VIEW field. */
+.sectionPulled {
+  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.5), 0 0 32px rgba(0, 212, 255, 0.28);
+  background: rgba(0, 212, 255, 0.04);
+  animation: pullGlow 1.6s ease-out;
+}
+
+@keyframes pullGlow {
+  0% { box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.7), 0 0 40px rgba(0, 255, 136, 0.4); }
+  100% { box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.5), 0 0 32px rgba(0, 212, 255, 0.28); }
+}
+
+/* Subtle grid overlay */
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+}
+
+/* Radial vignette */
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.6) 100%);
+  pointer-events: none;
+}
+
+/* ── Orb ── */
+
+.orbContainer {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  flex-shrink: 0;
+}
+
+.orbGlow {
+  position: absolute;
+  inset: -60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.25), transparent 70%);
+  filter: blur(40px);
+  animation: glowPulse 4s ease-in-out infinite;
+}
+
+.orbCore {
+  position: absolute;
+  inset: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #00e5ff, #0088cc 50%, #003355 90%, #001122);
+  box-shadow:
+    0 0 60px rgba(0, 212, 255, 0.4),
+    0 0 120px rgba(0, 212, 255, 0.2),
+    inset 0 0 30px rgba(0, 140, 255, 0.3);
+  animation: corePulse 4s ease-in-out infinite;
+}
+
+.orbRing1 {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  animation: ringRotate 25s linear infinite;
+}
+
+.orbRing2 {
+  position: absolute;
+  inset: -15px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 212, 255, 0.1);
+  animation: ringRotate 35s linear infinite reverse;
+}
+
+.orbRing3 {
+  position: absolute;
+  inset: -35px;
+  border-radius: 50%;
+  border: 1px dashed rgba(0, 212, 255, 0.08);
+  animation: ringRotate 50s linear infinite;
+}
+
+/* Ring tick marks */
+.orbRing1::before,
+.orbRing2::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 2px;
+  height: 8px;
+  background: rgba(0, 212, 255, 0.4);
+  transform: translateX(-50%);
+}
+
+.orbRing1::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  width: 2px;
+  height: 8px;
+  background: rgba(0, 212, 255, 0.3);
+  transform: translateX(-50%);
+}
+
+/* Orb as button — clickable */
+.orbButton {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.orbButton:disabled {
+  cursor: wait;
+}
+
+.orbButton:focus-visible .orbRing1 {
+  border-color: rgba(0, 212, 255, 0.5);
+}
+
+/* Mic icon overlay when listening */
+.orbMicIcon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  color: rgba(0, 255, 136, 0.6);
+  z-index: 5;
+  animation: micPulse 1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Listening state — green tint, steady pulse */
+.orbCoreListening {
+  animation: corePulseListening 1.2s ease-in-out infinite;
+  background: radial-gradient(circle at 35% 35%, #00ff88, #00cc66 50%, #004422 90%, #001a0e);
+  box-shadow:
+    0 0 80px rgba(0, 255, 136, 0.5),
+    0 0 160px rgba(0, 255, 136, 0.2),
+    inset 0 0 40px rgba(0, 200, 100, 0.3);
+}
+
+.orbGlowListening {
+  background: radial-gradient(circle, rgba(0, 255, 136, 0.3), transparent 70%);
+  animation: glowPulseFast 1.2s ease-in-out infinite;
+}
+
+/* Processing state — amber pulse */
+.orbCoreProcessing {
+  animation: corePulseProcessing 0.8s ease-in-out infinite;
+  background: radial-gradient(circle at 35% 35%, #ffcc00, #cc8800 50%, #553300 90%, #221100);
+  box-shadow:
+    0 0 80px rgba(255, 184, 0, 0.5),
+    0 0 160px rgba(255, 184, 0, 0.2),
+    inset 0 0 40px rgba(200, 150, 0, 0.3);
+}
+
+.orbGlowProcessing {
+  background: radial-gradient(circle, rgba(255, 184, 0, 0.3), transparent 70%);
+  animation: glowPulseProcessing 0.8s ease-in-out infinite;
+}
+
+/* Speaking state — orb brightens and pulses faster */
+.orbCoreSpeaking {
+  animation: corePulseFast 1.5s ease-in-out infinite;
+  box-shadow:
+    0 0 80px rgba(0, 212, 255, 0.6),
+    0 0 160px rgba(0, 212, 255, 0.3),
+    inset 0 0 40px rgba(0, 180, 255, 0.4);
+}
+
+.orbGlowSpeaking {
+  animation: glowPulseFast 1.5s ease-in-out infinite;
+}
+
+/* Status dot variants */
+.statusDotListening {
+  background: #00FF88;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+}
+
+.statusDotProcessing {
+  background: #FFB800;
+  box-shadow: 0 0 12px rgba(255, 184, 0, 0.6);
+  animation: statusPulseFast 0.6s ease-in-out infinite;
+}
+
+/* ── Data streams (side panels) ── */
+
+.dataStream {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  color: rgba(0, 212, 255, 0.35);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+}
+
+.dataStreamInner {
+  animation: scrollUp 40s linear infinite;
+}
+
+.dataStreamInnerReverse {
+  animation: scrollDown 35s linear infinite;
+}
+
+.dataHighlight {
+  color: rgba(0, 212, 255, 0.7);
+}
+
+/* ── TL;DR response area ── */
+
+.responseArea {
+  font-family: var(--font-sora), 'Sora', sans-serif;
+}
+
+.typewriter {
+  overflow: hidden;
+  border-right: 2px solid rgba(0, 212, 255, 0.6);
+  animation: blink 1s step-end infinite;
+}
+
+/* ── Transcript panel ── */
+
+.transcript {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 212, 255, 0.2) transparent;
+}
+
+.transcript::-webkit-scrollbar {
+  width: 4px;
+}
+
+.transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.transcript::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.2);
+  border-radius: 2px;
+}
+
+/* ── Status indicator ── */
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00D4FF;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.statusDotOffline {
+  background: #4A6A8A;
+  box-shadow: none;
+  animation: none;
+}
+
+/* ── HUD corner decorations ── */
+
+.hudCorner {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.hudCorner::before,
+.hudCorner::after {
+  content: '';
+  position: absolute;
+  background: rgba(0, 212, 255, 0.15);
+}
+
+.hudCornerTL {
+  top: 0;
+  left: 0;
+}
+.hudCornerTL::before {
+  top: 0; left: 0; width: 20px; height: 1px;
+}
+.hudCornerTL::after {
+  top: 0; left: 0; width: 1px; height: 20px;
+}
+
+.hudCornerTR {
+  top: 0;
+  right: 0;
+}
+.hudCornerTR::before {
+  top: 0; right: 0; width: 20px; height: 1px;
+}
+.hudCornerTR::after {
+  top: 0; right: 0; width: 1px; height: 20px;
+}
+
+.hudCornerBL {
+  bottom: 0;
+  left: 0;
+}
+.hudCornerBL::before {
+  bottom: 0; left: 0; width: 20px; height: 1px;
+}
+.hudCornerBL::after {
+  bottom: 0; left: 0; width: 1px; height: 20px;
+}
+
+.hudCornerBR {
+  bottom: 0;
+  right: 0;
+}
+.hudCornerBR::before {
+  bottom: 0; right: 0; width: 20px; height: 1px;
+}
+.hudCornerBR::after {
+  bottom: 0; right: 0; width: 1px; height: 20px;
+}
+
+/* ── Keyframes ── */
+
+@keyframes corePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes corePulseFast {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes glowPulseFast {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes ringRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes scrollUp {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+@keyframes scrollDown {
+  0% { transform: translateY(-50%); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes blink {
+  50% { border-color: transparent; }
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes statusPulseFast {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes corePulseListening {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes corePulseProcessing {
+  0%, 100% { transform: scale(0.98); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes glowPulseProcessing {
+  0%, 100% { opacity: 0.5; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+@keyframes micPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ── Waveform visualizer (speaking state) ── */
+
+.waveformContainer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.waveformBar {
+  width: 4px;
+  height: 20px;
+  background: rgba(0, 212, 255, 0.7);
+  border-radius: 2px;
+  animation: waveformPulse 0.6s ease-in-out infinite alternate;
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.4);
+}
+
+.waveformBar:nth-child(1) { height: 16px; }
+.waveformBar:nth-child(2) { height: 28px; }
+.waveformBar:nth-child(3) { height: 22px; }
+.waveformBar:nth-child(4) { height: 36px; }
+.waveformBar:nth-child(5) { height: 22px; }
+.waveformBar:nth-child(6) { height: 28px; }
+.waveformBar:nth-child(7) { height: 16px; }
+
+@keyframes waveformPulse {
+  0% { transform: scaleY(0.3); opacity: 0.5; }
+  100% { transform: scaleY(1.4); opacity: 1; }
+}
+
+/* ── Speed slider ── */
+
+.speedSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: rgba(0, 212, 255, 0.15);
+  border-radius: 1px;
+  outline: none;
+  cursor: pointer;
+}
+
+.speedSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #00D4FF;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+  cursor: pointer;
+}
+
+.speedSlider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #00D4FF;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+  border: none;
+  cursor: pointer;
+}
+
+/* ── HUD info panels ── */
+
+.hudPanel {
+  background: rgba(0, 12, 25, 0.9);
+  border: 1px solid rgba(0, 212, 255, 0.28);
+  border-radius: 12px;
+  padding: 20px 22px;
+  backdrop-filter: blur(16px);
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 0 20px rgba(0, 212, 255, 0.06),
+    0 0 40px rgba(0, 212, 255, 0.02),
+    inset 0 1px 0 rgba(0, 212, 255, 0.1);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hudPanel:hover {
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow:
+    0 0 25px rgba(0, 212, 255, 0.1),
+    0 0 50px rgba(0, 212, 255, 0.04),
+    inset 0 1px 0 rgba(0, 212, 255, 0.15);
+}
+
+.hudPanel > *:not(.hudCornerMark) {
+  position: relative;
+  z-index: 1;
+}
+
+.hudPanel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.4), transparent);
+}
+
+.hudPanel::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.08), transparent);
+}
+
+.hudPanelHeader {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: #00D4FF;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+  padding-bottom: 10px;
+  padding-left: 10px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  border-left: 2px solid rgba(0, 212, 255, 0.6);
+}
+
+.hudPanelText {
+  font-family: var(--font-sora), 'Sora', sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: rgba(224, 240, 255, 0.92);
+}
+
+.hudPanelItem {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(224, 240, 255, 0.8);
+  padding: 10px 4px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.08);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  cursor: pointer;
+  transition: color 0.2s ease, padding-left 0.2s ease, max-height 0.3s ease;
+  max-height: 4em;
+  overflow: hidden;
+  position: relative;
+  padding-right: 20px;
+}
+
+.hudPanelItem::after {
+  content: '▸';
+  position: absolute;
+  right: 0;
+  top: 8px;
+  font-size: 10px;
+  color: rgba(0, 212, 255, 0.4);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.hudPanelItem:hover {
+  color: rgba(224, 240, 255, 1);
+  padding-left: 4px;
+}
+
+.hudPanelItem:hover::after {
+  color: rgba(0, 212, 255, 0.7);
+}
+
+.hudPanelItem:last-child {
+  border-bottom: none;
+}
+
+.hudPanelItemExpanded {
+  composes: hudPanelItem;
+  max-height: 800px;
+  overflow: visible;
+  color: rgba(224, 240, 255, 0.95);
+  background: rgba(0, 212, 255, 0.06);
+  margin: 4px -8px;
+  padding: 12px 10px;
+  padding-right: 24px;
+  border-radius: 6px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+  border-left: 2px solid rgba(0, 212, 255, 0.4);
+  cursor: pointer;
+}
+
+.hudPanelItemExpanded::after {
+  content: '▾';
+  color: rgba(0, 212, 255, 0.7);
+  right: 8px;
+  top: 10px;
+}
+
+.hudFleetRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 0;
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 14px;
+}
+
+.hudFleetName {
+  color: rgba(224, 240, 255, 0.9);
+  flex: 1;
+  text-transform: capitalize;
+}
+
+.hudFleetTask {
+  font-size: 10px;
+  color: rgba(0, 212, 255, 0.4);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.hudFleetAgo {
+  color: rgba(0, 212, 255, 0.5);
+  font-size: 11px;
+}
+
+.hudDotOnline {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00FF88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+  flex-shrink: 0;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.hudDotStale {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4A6A8A;
+  flex-shrink: 0;
+}
+
+/* ── Corner brackets on panels ── */
+
+.hudPanelBracketed {
+  composes: hudPanel;
+}
+
+.hudPanelBracketed::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.6), rgba(0, 212, 255, 0.15) 40%, transparent 70%);
+}
+
+.hudPanelBracketed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.12), transparent);
+}
+
+/* Corner accent marks */
+.hudCornerMark {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.hudCornerMarkTL {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid rgba(0, 212, 255, 0.5);
+  border-left: 2px solid rgba(0, 212, 255, 0.5);
+  border-top-left-radius: 4px;
+}
+
+.hudCornerMarkTR {
+  top: -1px;
+  right: -1px;
+  border-top: 2px solid rgba(0, 212, 255, 0.5);
+  border-right: 2px solid rgba(0, 212, 255, 0.5);
+  border-top-right-radius: 4px;
+}
+
+.hudCornerMarkBL {
+  bottom: -1px;
+  left: -1px;
+  border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+  border-left: 2px solid rgba(0, 212, 255, 0.3);
+  border-bottom-left-radius: 4px;
+}
+
+.hudCornerMarkBR {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+  border-right: 2px solid rgba(0, 212, 255, 0.3);
+  border-bottom-right-radius: 4px;
+}
+
+/* ── HUD timestamp ── */
+
+.hudTimestamp {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: rgba(0, 212, 255, 0.35);
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ── Animated accent line separator ── */
+
+.hudAccentLine {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.35), transparent);
+  margin: 2px 0;
+  opacity: 0.6;
+}
+
+/* ── Model indicator badge ── */
+
+.hudModelBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(0, 212, 255, 0.5);
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: 4px;
+  background: rgba(0, 12, 25, 0.6);
+}
+
+.hudModelDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #00D4FF;
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.5);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+/* ── Bottom HUD bar ── */
+
+.hudBottomBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 8px 24px;
+  font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(0, 212, 255, 0.3);
+  background: linear-gradient(to top, rgba(0, 12, 25, 0.9), transparent);
+  border-top: 1px solid rgba(0, 212, 255, 0.06);
+  z-index: 20;
+  flex-wrap: wrap;
+}
+
+.hudBottomSep {
+  margin: 0 12px;
+  color: rgba(0, 212, 255, 0.12);
+}
+
+/* ── Scan line effect ── */
+
+.scanline {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 212, 255, 0.02) 50%,
+    transparent 100%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  opacity: 0.3;
+}

@@ -73,12 +73,20 @@ export async function middleware(request: NextRequest) {
   // GAP-0034: /api/workflows/health is an unauthenticated health probe — must be
   // reachable from monitoring contexts (load balancers, watcher crons, external
   // watchdogs) without requiring a session cookie. Auth-gating defeats the purpose.
+  // PWA (Phase 1): the manifest, app icons, and service worker MUST be fetchable
+  // pre-auth — the browser requests them before login to enable "install"/standalone.
+  // These are static, non-sensitive assets (no user data), safe to expose publicly.
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/_next') ||
     pathname === '/favicon.ico' ||
-    pathname === '/api/workflows/health'
+    pathname === '/api/workflows/health' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/icon.svg' ||
+    pathname === '/apple-icon.png' ||
+    pathname === '/sw.js' ||
+    pathname.startsWith('/swe-worker')
   ) {
     const response = NextResponse.next();
     response.headers.set('Access-Control-Allow-Origin', corsOrigin);

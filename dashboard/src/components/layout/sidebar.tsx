@@ -19,6 +19,16 @@ import {
   IconTarget,
   IconMessages,
   IconNotes,
+  IconMicrophone,
+  IconChartCandle,
+  IconChartArea,
+  IconReportMoney,
+  IconTrendingUp,
+  IconChecklist,
+  IconBulb,
+  IconAffiliate,
+  IconHistory,
+  IconRadar2,
 } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -38,8 +48,16 @@ const navItems: NavItem[] = [
   { label: 'Agents', href: '/agents', icon: IconRobot, section: 'core' },
   { label: 'Tasks', href: '/tasks', icon: IconListCheck, section: 'core' },
   { label: 'Activity', href: '/activity', icon: IconActivity, section: 'core' },
+  { label: 'Decisions & Ideas', href: '/decisions', icon: IconChecklist, section: 'core' },
+
+  { label: 'Jarvis', href: '/voice', icon: IconMicrophone, section: 'core' },
 
   // Operations
+  { label: 'Prediction Markets', href: '/predictions', icon: IconChartCandle, section: 'ops' },
+  { label: 'Options', href: '/options', icon: IconChartArea, section: 'ops' },
+  { label: 'Advisor', href: '/advisor', icon: IconReportMoney, section: 'ops' },
+  { label: 'Futures / Crypto', href: '/futures', icon: IconTrendingUp, section: 'ops' },
+  { label: 'Edge Engine', href: '/edge-engine', icon: IconRadar2, section: 'ops' },
   { label: 'Comms', href: '/comms', icon: IconMessages, section: 'ops' },
   { label: 'Approvals', href: '/approvals', icon: IconShieldCheck, section: 'ops' },
   { label: 'Workflows', href: '/workflows', icon: IconClock, section: 'ops' },
@@ -47,6 +65,9 @@ const navItems: NavItem[] = [
   { label: 'Analytics', href: '/analytics', icon: IconChartDots3, section: 'ops' },
 
   // Intelligence
+  { label: 'New Ideas', href: '/new-ideas', icon: IconBulb, section: 'intel' },
+  { label: 'Connections', href: '/connections', icon: IconAffiliate, section: 'intel' },
+  { label: 'Throwback', href: '/throwback', icon: IconHistory, section: 'intel' },
   { label: 'Knowledge Base', href: '/knowledge-base', icon: IconBook2, section: 'intel' },
   { label: 'Wiki', href: '/wiki', icon: IconNotes, section: 'intel' },
   { label: 'Experiments', href: '/experiments', icon: IconFlask, section: 'intel' },

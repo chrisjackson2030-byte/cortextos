@@ -213,10 +213,12 @@ with open('$STATE_FILE', 'w') as f:
 
 echo "[$ts] tier=$tier week_sessions=$week_sessions today=$today_sessions yesterday=$yesterday_sessions daily_avg=$daily_avg reason=$reason" >> "$LOG_FILE"
 
-# Alert logic: on tier change OR every check while RED
+# Alert logic (2026-06-07, B feedback "these are annoying"): Telegram ONLY when genuinely
+# actionable — entering RED (near cap) or recovering from RED. YELLOW/GREEN transitions are
+# disk-only (still logged above). The old 70% YELLOW pings + every-check-while-RED were noise.
 should_alert=0
-[ "$tier" != "$last_tier" ] && should_alert=1
-[ "$tier" = "RED" ] && should_alert=1
+[ "$tier" = "RED" ] && [ "$last_tier" != "RED" ] && should_alert=1
+[ "$tier" = "GREEN" ] && [ "$last_tier" = "RED" ] && should_alert=1
 
 if [ "$should_alert" -eq 1 ] && [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
   case "$tier" in

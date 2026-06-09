@@ -6,7 +6,12 @@ import { getGoals } from '@/lib/data/goals';
 import { getHealthSummary, getAllHeartbeats } from '@/lib/data/heartbeats';
 import { getRecentEvents, getMilestones, getMetricSparklines, getActivityHeatmap } from '@/lib/data/events';
 import { discoverAgents } from '@/lib/data/agents';
+import { getColdProjects, getThrowback, getLeftOff, getBuildTracker } from '@/lib/data/command-center';
 
+import { BuildTracker } from '@/components/overview/build-tracker';
+import { JarvisBuildPanel } from '@/components/overview/jarvis-build-panel';
+import { DebriefMemory } from '@/components/overview/debrief-memory';
+import { TradingSnapshot } from '@/components/overview/trading-snapshot';
 import { ActionRequired } from '@/components/overview/action-required';
 import { CurrentFocus } from '@/components/overview/current-focus';
 import { TodaysProgress } from '@/components/overview/todays-progress';
@@ -62,6 +67,12 @@ export default async function OverviewPage({
     Promise.resolve(getActivityHeatmap(org || undefined)),
   ]);
 
+  // Command-center "second brain" data — surfaced from the shared registries.
+  const coldProjects = getColdProjects();
+  const throwback = getThrowback();
+  const leftOff = getLeftOff();
+  const buildTracker = getBuildTracker();
+
   // Convert heartbeats array to lookup map
   const heartbeats: Record<string, typeof heartbeatsList[number]> = {};
   for (const hb of heartbeatsList) {
@@ -116,6 +127,13 @@ export default async function OverviewPage({
         )}
       </div>
 
+      {/* Jarvis build-roadmap ribbon — where the system itself is in development */}
+      <BuildTracker data={buildTracker} />
+
+      {/* Jarvis Build accountability panel — self-construction loop status, countdown,
+          issues, dormancy flag. Read-only from state/loop-state.json + plan + logs. */}
+      <JarvisBuildPanel />
+
       {/* Daily Focus + Bottleneck */}
       <DailyFocusBanner
         dailyFocus={goalsData.daily_focus}
@@ -134,6 +152,9 @@ export default async function OverviewPage({
         blockedTasks={blockedTasks.length}
         sparklines={sparklines}
       />
+
+      {/* Profit Pulse — live trading (prediction markets + Alpaca options w/ live account) */}
+      <TradingSnapshot />
 
       {/* Active Work — in progress + recently completed */}
       <ActiveWork
@@ -155,6 +176,7 @@ export default async function OverviewPage({
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-1 space-y-4">
           <AgentStatusGrid agents={visibleAgents} heartbeats={heartbeats} />
+          <DebriefMemory leftOff={leftOff} coldProjects={coldProjects} throwback={throwback} />
           <AgentTaskBreakdown tasks={allTasks} />
           <ActivityHeatmap data={heatmapData} />
         </div>

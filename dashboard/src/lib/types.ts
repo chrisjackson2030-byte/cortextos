@@ -185,9 +185,17 @@ export interface User {
 // -- SSE Types --
 
 export interface SSEEvent {
-  type: 'task' | 'approval' | 'heartbeat' | 'event' | 'sync';
+  type: 'task' | 'approval' | 'heartbeat' | 'event' | 'sync' | 'message';
   data: Record<string, unknown>;
   timestamp: string;
+}
+
+// Voice console transcript line (carried on SSEEvent.data for type 'message')
+export interface VoiceMessage {
+  direction: 'inbound' | 'outbound';   // inbound = B→agent, outbound = agent→B
+  agent: string;
+  text: string;
+  ts: string;
 }
 
 // -- Task Filters --

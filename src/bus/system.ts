@@ -326,8 +326,13 @@ export function checkGoalStaleness(
         continue;
       }
 
-      // Parse ISO 8601 timestamp
-      const parsedDate = new Date(updatedLine);
+      // Parse ISO 8601 timestamp. `goals generate-md` writes the line as
+      // "<ISO> (by <who>)" — the " (by …)" suffix makes new Date() return
+      // Invalid Date, which previously false-flagged every agent as stale.
+      // Extract the leading ISO timestamp before parsing; fall back to the
+      // whole line so a bare timestamp still works.
+      const isoMatch = updatedLine.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/);
+      const parsedDate = new Date(isoMatch ? isoMatch[0] : updatedLine);
       if (isNaN(parsedDate.getTime())) {
         agents.push({
           agent: agentName,

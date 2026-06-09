@@ -60,12 +60,18 @@ const HALT_SCHEMA_SQL = `
  * must ever block compaction.
  */
 async function armHaltForCompaction(): Promise<void> {
-  // ── Mechanism A: touch KILL_SWITCH file ─────────────────────────────────
+  // ── Mechanism A: arm KILL_SWITCH file with the compaction sentinel ───────
+  // Exclusive create ('wx'): write the sentinel ONLY when creating the file from
+  // absence. If it already exists (operator/B armed it, or a prior compaction),
+  // the write throws EEXIST and we leave the existing file untouched. The sentinel
+  // lets compaction_watchdog.py auto-remove ONLY a compaction-armed file on resume
+  // — never an operator-armed one. This string MUST match
+  // COMPACTION_KILL_SWITCH_SENTINEL in src/discordbot/services/halt_state.py.
   try {
     mkdirSync(dirname(KILL_SWITCH_PATH), { recursive: true });
-    writeFileSync(KILL_SWITCH_PATH, '', { flag: 'a' });
+    writeFileSync(KILL_SWITCH_PATH, 'armed-by:jarvis_compacting\n', { flag: 'wx' });
   } catch {
-    // Non-fatal
+    // EEXIST (already armed) or any error — non-fatal; existing file is preserved.
   }
 
   // ── Mechanism B: insert halt record (enables watchdog auto-clear) ────────

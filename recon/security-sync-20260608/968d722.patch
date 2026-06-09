@@ -1,0 +1,335 @@
+commit 968d72213f7cc246b45d336809169e19f465fec0
+Author: Daniel Hoffman <daniel@thehoff.id.au>
+Date:   Sat Jun 6 02:29:04 2026 +1000
+
+    fix(security): validate task ids + assignee before path construction (#13/#14) (#598)
+    
+    Task operations interpolated caller-supplied taskId (and task.assigned_to) into
+    filesystem paths with no validation, so a traversal id/assignee could escape the
+    task tree (read/write/rename/unlink arbitrary *.json / *.jsonl / *.claim).
+    
+    - New validateTaskId() in validate.ts (/^[a-z0-9_-]+$/, matching the
+      task_<epoch>_<rand> generator) — rejects path separators, dots, traversal.
+    - findTaskFile() validates taskId (the chokepoint for update/claim/complete/
+      check-deps); appendTaskAudit() + readTaskAudit() validate before building
+      audit paths; cli/bus.ts checkDeliverableRequirement() validates before its
+      pre-update/complete lookup (it runs ahead of findTaskFile's guard).
+    - saveOutput() validates taskId AND task.assigned_to (the latter comes from the
+      task JSON and feeds the deliverables path).
+    - archiveTasks()/compactTasks() validate task.id (from the JSON body) before
+      using it for rename/unlink, and reject a non-YYYY-MM completed_at before it
+      feeds the archive filename — both skip the offending task rather than abort.
+    
+    Tests: validateTaskId accept/reject; findTaskFile + readTaskAudit reject
+    traversal; saveOutput rejects traversal taskId + tampered assigned_to and still
+    saves a legit deliverable; archiveTasks skips a traversal-id task without escaping.
+    
+    Follow-ups (out of this traversal-scope branch): derive archive/compact filenames
+    from the on-disk task_*.json name rather than trusting task.id (guards against a
+    valid-but-mismatched id touching the wrong in-tree file); add a log line to the
+    archiveTasks skip path.
+    
+    Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+diff --git a/src/bus/save-output.ts b/src/bus/save-output.ts
+index b77cca8..e54ad79 100644
+--- a/src/bus/save-output.ts
++++ b/src/bus/save-output.ts
+@@ -7,6 +7,7 @@ import {
+ import { basename, extname, join, posix, relative, sep } from 'path';
+ import type { BusPaths, Task, TaskOutput } from '../types/index.js';
+ import { atomicWriteSync, ensureDir } from '../utils/atomic.js';
++import { validateTaskId, validateAgentName } from '../utils/validate.js';
+ 
+ export interface SaveOutputOptions {
+   /** Source file to copy or move into the deliverables tree. */
+@@ -56,6 +57,9 @@ export function saveOutput(
+ ): SaveOutputResult {
+   const { sourcePath, taskId, label, move = false, noLink = false } = options;
+ 
++  // Reject a path-traversal taskId before it builds the task-file path below.
++  validateTaskId(taskId);
++
+   if (!existsSync(sourcePath)) {
+     throw new Error(`Source file not found: ${sourcePath}`);
+   }
+@@ -66,6 +70,10 @@ export function saveOutput(
+   }
+   const task: Task = JSON.parse(readFileSync(taskFile, 'utf-8'));
+ 
++  // assigned_to comes from the task JSON and is interpolated into the
++  // deliverables path — validate it so a tampered task file can't escape the tree.
++  validateAgentName(task.assigned_to);
++
+   const taskDir = join(paths.deliverablesDir, task.assigned_to, taskId);
+   ensureDir(taskDir);
+ 
+diff --git a/src/bus/task.ts b/src/bus/task.ts
+index e3f01b5..c901703 100644
+--- a/src/bus/task.ts
++++ b/src/bus/task.ts
+@@ -3,7 +3,7 @@ import { join } from 'path';
+ import type { Task, Priority, TaskStatus, BusPaths, StaleTaskReport, ArchiveReport } from '../types/index.js';
+ import { atomicWriteSync, ensureDir } from '../utils/atomic.js';
+ import { randomDigits } from '../utils/random.js';
+-import { validatePriority } from '../utils/validate.js';
++import { validatePriority, validateTaskId } from '../utils/validate.js';
+ import { logEvent } from './event.js';
+ 
+ /**
+@@ -221,6 +221,9 @@ export function checkTaskDependencies(
+  * task-graph visualization, or cross-org list-tasks flag).
+  */
+ export function findTaskFile(paths: BusPaths, taskId: string): string | null {
++  // Reject path-traversal task ids before they reach any join() below. This is
++  // the chokepoint for updateTask/claimTask/completeTask/checkTaskDependencies.
++  validateTaskId(taskId);
+   // Fast path: same-org lookup.
+   const sameOrg = join(paths.taskDir, `${taskId}.json`);
+   if (existsSync(sameOrg)) return sameOrg;
+@@ -313,6 +316,9 @@ export function appendTaskAudit(
+   taskId: string,
+   entry: Omit<TaskAuditEntry, 'ts'>,
+ ): void {
++  // Validate before the try so a traversal id is rejected loudly rather than
++  // swallowed by the audit-never-blocks catch below.
++  validateTaskId(taskId);
+   try {
+     const auditDir = join(paths.taskDir, 'audit');
+     ensureDir(auditDir);
+@@ -336,6 +342,7 @@ export function readTaskAudit(
+   paths: BusPaths,
+   taskId: string,
+ ): TaskAuditEntry[] {
++  validateTaskId(taskId);
+   const path = join(paths.taskDir, 'audit', `${taskId}.jsonl`);
+   if (!existsSync(path)) return [];
+   const entries: TaskAuditEntry[] = [];
+@@ -686,6 +693,9 @@ export function archiveTasks(paths: BusPaths, dryRun: boolean = false): ArchiveR
+     const age = nowEpoch - completedEpoch;
+ 
+     if (age > ARCHIVE_AGE) {
++      // task.id comes from the file's JSON body and is used to build the
++      // rename source/dest below; a tampered id must not escape the task tree.
++      try { validateTaskId(task.id); } catch { skipped++; continue; }
+       if (!dryRun) {
+         const archiveDir = join(paths.taskDir, 'archive');
+         ensureDir(archiveDir);
+@@ -793,7 +803,18 @@ export function compactTasks(
+       continue;
+     }
+ 
++    // task.id (from the file's JSON body) is used to unlink the source file
++    // below; a tampered id must not delete a file outside the task tree.
++    try { validateTaskId(task.id); } catch { report.skipped.push({ id: String(task.id), reason: 'invalid task id (path-traversal guard)' }); continue; }
++
+     const yyyymm = task.completed_at.substring(0, 7); // YYYY-MM
++    // completed_at is from the JSON body and feeds the archive filename below;
++    // reject anything that isn't a literal YYYY-MM so a tampered timestamp can't
++    // traverse out of the task tree via the archive path.
++    if (!/^\d{4}-\d{2}$/.test(yyyymm)) {
++      report.skipped.push({ id: String(task.id), reason: 'invalid completed_at (path-traversal guard)' });
++      continue;
++    }
+     const archiveFile = `archive-${yyyymm}.jsonl`;
+     const archivePath = join(taskDir, archiveFile);
+     const entry = {
+diff --git a/src/cli/bus.ts b/src/cli/bus.ts
+index d9183b3..a736b2a 100644
+--- a/src/cli/bus.ts
++++ b/src/cli/bus.ts
+@@ -3,7 +3,7 @@ import { spawnSync, execFileSync } from 'child_process';
+ import { existsSync, readFileSync } from 'fs';
+ import { join } from 'path';
+ import { sendMessage, checkInbox, ackInbox } from '../bus/message.js';
+-import { validateAgentName } from '../utils/validate.js';
++import { validateAgentName, validateTaskId } from '../utils/validate.js';
+ import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTaskDependencies, compactTasks, listTasks, checkStaleTasks, archiveTasks, checkHumanTasks } from '../bus/task.js';
+ import { saveOutput } from '../bus/save-output.js';
+ import { logEvent } from '../bus/event.js';
+@@ -31,6 +31,9 @@ import type { Priority, Task, TaskStatus, EventCategory, EventSeverity, Approval
+  * Returns an error message if the transition should be blocked, or null if allowed.
+  */
+ function checkDeliverableRequirement(taskId: string, frameworkRoot: string, org: string, taskDir: string): string | null {
++  // Reject a traversal task id before it builds the task-file path below — this
++  // runs ahead of updateTask/completeTask, so it can't rely on findTaskFile's guard.
++  validateTaskId(taskId);
+   // Read org context to check require_deliverables setting
+   const contextPath = join(frameworkRoot, 'orgs', org, 'context.json');
+   if (!existsSync(contextPath)) return null;
+diff --git a/src/utils/validate.ts b/src/utils/validate.ts
+index 068db2b..e2a29ed 100644
+--- a/src/utils/validate.ts
++++ b/src/utils/validate.ts
+@@ -2,6 +2,19 @@ import type { Priority, EventCategory, EventSeverity, ApprovalCategory } from '.
+ import { VALID_PRIORITIES } from '../types/index.js';
+ 
+ const AGENT_NAME_REGEX = /^[a-z0-9_-]+$/;
++// Task IDs are generated as `task_<epoch>_<rand>` (lowercase). Allow lowercase
++// letters, digits, underscores and hyphens — matching the generator and the
++// rest of the codebase's identifier convention — while rejecting path
++// separators and dots so a task id can never traverse out of the task tree.
++const TASK_ID_REGEX = /^[a-z0-9_-]+$/;
++
++export function validateTaskId(taskId: string): void {
++  if (!taskId || !TASK_ID_REGEX.test(taskId)) {
++    throw new Error(
++      `Invalid task id '${taskId}'. Must contain only letters, numbers, underscores, and hyphens.`
++    );
++  }
++}
+ 
+ export function validateInstanceId(instanceId: string): void {
+   if (!instanceId || !AGENT_NAME_REGEX.test(instanceId)) {
+diff --git a/tests/unit/bus/save-output.test.ts b/tests/unit/bus/save-output.test.ts
+new file mode 100644
+index 0000000..8607a7d
+--- /dev/null
++++ b/tests/unit/bus/save-output.test.ts
+@@ -0,0 +1,59 @@
++import { describe, it, expect, beforeEach, afterEach } from 'vitest';
++import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
++import { join } from 'path';
++import { tmpdir } from 'os';
++import { saveOutput } from '../../../src/bus/save-output';
++import type { BusPaths } from '../../../src/types';
++
++describe('saveOutput path-traversal hardening (#13)', () => {
++  let dir: string;
++  let paths: BusPaths;
++
++  beforeEach(() => {
++    dir = mkdtempSync(join(tmpdir(), 'cortextos-saveout-'));
++    paths = {
++      ctxRoot: dir,
++      taskDir: join(dir, 'tasks'),
++      deliverablesDir: join(dir, 'deliverables'),
++      inbox: join(dir, 'inbox'),
++      inflight: join(dir, 'inflight'),
++      processed: join(dir, 'processed'),
++      logDir: join(dir, 'logs'),
++      stateDir: join(dir, 'state'),
++      approvalDir: join(dir, 'approvals'),
++      analyticsDir: join(dir, 'analytics'),
++      heartbeatDir: join(dir, 'heartbeats'),
++    } as BusPaths;
++    mkdirSync(paths.taskDir, { recursive: true });
++  });
++
++  afterEach(() => rmSync(dir, { recursive: true, force: true }));
++
++  it('rejects a traversal taskId before any path is built', () => {
++    const src = join(dir, 'out.txt');
++    writeFileSync(src, 'x');
++    expect(() => saveOutput(paths, { sourcePath: src, taskId: '../../etc/passwd' }))
++      .toThrow(/Invalid task id/);
++  });
++
++  it('rejects a tampered assigned_to that would escape the deliverables tree', () => {
++    const src = join(dir, 'out.txt');
++    writeFileSync(src, 'x');
++    const taskId = 'task_1_001';
++    // A task file whose assigned_to carries traversal — must not build a path out of the tree.
++    writeFileSync(join(paths.taskDir, `${taskId}.json`), JSON.stringify({ id: taskId, assigned_to: '../../../etc' }));
++    expect(() => saveOutput(paths, { sourcePath: src, taskId }))
++      .toThrow(/Invalid agent name/);
++  });
++
++  it('saves a deliverable for a legitimate task + assignee', () => {
++    const src = join(dir, 'report.md');
++    writeFileSync(src, '# hi');
++    const taskId = 'task_2_002';
++    writeFileSync(join(paths.taskDir, `${taskId}.json`), JSON.stringify({ id: taskId, assigned_to: 'boris', outputs: [] }));
++    const res = saveOutput(paths, { sourcePath: src, taskId });
++    expect(res.linked).toBe(true);
++    expect(res.storedPath).toContain('boris');
++    expect(res.storedPath).toContain(taskId);
++  });
++});
+diff --git a/tests/unit/bus/task.test.ts b/tests/unit/bus/task.test.ts
+index 23c2067..47228da 100644
+--- a/tests/unit/bus/task.test.ts
++++ b/tests/unit/bus/task.test.ts
+@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+ import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'fs';
+ import { join } from 'path';
+ import { tmpdir } from 'os';
+-import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTaskDependencies, compactTasks, listTasks, findTaskFile } from '../../../src/bus/task';
++import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTaskDependencies, compactTasks, listTasks, findTaskFile, archiveTasks } from '../../../src/bus/task';
+ import type { BusPaths } from '../../../src/types';
+ 
+ describe('Task Management', () => {
+@@ -29,6 +29,36 @@ describe('Task Management', () => {
+     rmSync(testDir, { recursive: true, force: true });
+   });
+ 
++  describe('path-traversal hardening (#13/#14)', () => {
++    it('findTaskFile rejects a traversal task id', () => {
++      expect(() => findTaskFile(paths, '../../etc/passwd')).toThrow(/Invalid task id/);
++      expect(() => findTaskFile(paths, 'task/../../secrets')).toThrow(/Invalid task id/);
++      expect(() => findTaskFile(paths, 'task_1.json')).toThrow(/Invalid task id/);
++    });
++
++    it('readTaskAudit rejects a traversal task id', () => {
++      expect(() => readTaskAudit(paths, '../../../etc/shadow')).toThrow(/Invalid task id/);
++    });
++
++    it('findTaskFile still resolves a legitimate task', () => {
++      const id = createTask(paths, 'paul', 'acme', 'T', { assignee: 'boris' });
++      expect(findTaskFile(paths, id)).toContain(`${id}.json`);
++    });
++
++    it('archiveTasks skips a task whose JSON id is tampered with traversal (no escape)', () => {
++      mkdirSync(paths.taskDir, { recursive: true });
++      // Safe filename, but the internal id carries traversal that would resolve
++      // to testDir/escaped.json (outside the task tree) on archive write/rename.
++      writeFileSync(join(paths.taskDir, 'task_evil_1.json'), JSON.stringify({
++        id: '../escaped', status: 'completed', completed_at: '2020-01-01T00:00:00Z',
++        assigned_to: 'boris', org: 'acme',
++      }));
++      expect(() => archiveTasks(paths)).not.toThrow();
++      // The guard must have prevented the out-of-tree write.
++      expect(existsSync(join(testDir, 'escaped.json'))).toBe(false);
++    });
++  });
++
+   describe('createTask', () => {
+     it('creates task with correct JSON format', () => {
+       const taskId = createTask(paths, 'paul', 'acme', 'Build landing page', {
+diff --git a/tests/unit/utils/validate.test.ts b/tests/unit/utils/validate.test.ts
+index 663566f..eee45db 100644
+--- a/tests/unit/utils/validate.test.ts
++++ b/tests/unit/utils/validate.test.ts
+@@ -1,6 +1,7 @@
+ import { describe, it, expect } from 'vitest';
+ import {
+   validateAgentName,
++  validateTaskId,
+   validateInstanceId,
+   validatePriority,
+   validateEventCategory,
+@@ -61,6 +62,24 @@ describe('validateAgentName', () => {
+   });
+ });
+ 
++describe('validateTaskId', () => {
++  it('accepts generated task ids', () => {
++    expect(() => validateTaskId('task_1780609827_123')).not.toThrow();
++    expect(() => validateTaskId('task_1_001')).not.toThrow();
++    expect(() => validateTaskId('custom-task_42')).not.toThrow();
++  });
++
++  it('rejects path-traversal, separators, and uppercase', () => {
++    expect(() => validateTaskId('')).toThrow();
++    expect(() => validateTaskId('../../etc/passwd')).toThrow();
++    expect(() => validateTaskId('task/../../secrets')).toThrow();
++    expect(() => validateTaskId('task_1.json')).toThrow();    // dot
++    expect(() => validateTaskId('task 1')).toThrow();          // space
++    expect(() => validateTaskId('a/b')).toThrow();             // slash
++    expect(() => validateTaskId('Task_1')).toThrow();          // uppercase (not generator-shaped)
++  });
++});
++
+ describe('validatePriority', () => {
+   it('accepts valid priorities', () => {
+     expect(() => validatePriority('urgent')).not.toThrow();
