@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { acquireLock, releaseLock } from '../../../src/utils/lock';
@@ -33,6 +33,26 @@ describe('mkdir-based locking', () => {
   it('releases lock correctly', () => {
     expect(acquireLock(testDir)).toBe(true);
     releaseLock(testDir);
+    expect(acquireLock(testDir)).toBe(true);
+    releaseLock(testDir);
+  });
+
+  // WS4 2026-06-15: regression for the forge-inbox permanent deadlock.
+  it('refuses a fresh PID-less lock dir (live mid-acquire holder)', () => {
+    // .lock.d exists, no pid file, just created -> caller must retry, not steal.
+    mkdirSync(join(testDir, '.lock.d'));
+    expect(acquireLock(testDir)).toBe(false);
+  });
+
+  it('steals a stale PID-less lock dir older than the grace period', () => {
+    // An empty .lock.d with no pid file is a crashed/partial acquire. Before the
+    // fix this deadlocked forever; now it is reclaimed once past the grace window.
+    const lockDir = join(testDir, '.lock.d');
+    mkdirSync(lockDir);
+    // Backdate the dir's mtime on disk to well past PIDLESS_LOCK_STALE_MS (30s).
+    const staleSec = (Date.now() - 60_000) / 1000;
+    utimesSync(lockDir, staleSec, staleSec);
+    expect(statSync(lockDir).mtimeMs).toBeLessThan(Date.now() - 30_000);
     expect(acquireLock(testDir)).toBe(true);
     releaseLock(testDir);
   });

@@ -1,5 +1,19 @@
-import { mkdirSync, rmdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
+import { mkdirSync, rmdirSync, writeFileSync, readFileSync, rmSync, statSync } from 'fs';
 import { join } from 'path';
+
+/**
+ * Grace period (ms) before a PID-less lock directory is treated as stale.
+ *
+ * WS4 2026-06-15: a crash (or a partial release) between `mkdirSync(lockDir)`
+ * and `writeFileSync(pidFile)` can leave a `.lock.d` with NO pid file. The old
+ * code returned `false` forever in that case (holder assumed "mid-acquire"),
+ * which permanently DEADLOCKED the lock — observed live: forge's bus inbox
+ * `.lock.d` (created 00:19Z, empty) blocked `checkInbox` for ~17h so two
+ * jarvis->forge messages never drained. A real mkdir->writeFileSync gap is sub-
+ * millisecond; anything older than this grace period is a dead holder, never an
+ * in-flight one, so it is safe to steal.
+ */
+const PIDLESS_LOCK_STALE_MS = 30_000;
 
 /**
  * Acquire a mutex lock using mkdir (atomic on all filesystems).
@@ -34,9 +48,32 @@ export function acquireLock(dir: string): boolean {
     try {
       storedPidRaw = readFileSync(pidFile, 'utf-8').trim();
     } catch {
-      // PID file not yet written.  Holder is between mkdir and writeFileSync.
-      // Refuse the lock — the caller's retry loop will try again.
-      return false;
+      // PID file not yet written.  Normally the holder is between mkdir and
+      // writeFileSync (sub-millisecond) — refuse and let the caller retry.
+      // BUT if the lock DIR itself is older than PIDLESS_LOCK_STALE_MS, no live
+      // holder is mid-acquire that long: it is a crashed/partial acquire that
+      // left an empty .lock.d, which would otherwise deadlock forever (WS4
+      // forge-inbox bug). Steal it atomically.
+      let lockAgeMs = 0;
+      try {
+        lockAgeMs = Date.now() - statSync(lockDir).mtimeMs;
+      } catch {
+        // Lock dir vanished between the EEXIST and the stat — gone, so retry.
+        return false;
+      }
+      if (lockAgeMs < PIDLESS_LOCK_STALE_MS) {
+        // Plausibly a live mid-acquire holder. Refuse; caller retries.
+        return false;
+      }
+      try {
+        rmSync(lockDir, { recursive: true, force: true });
+        mkdirSync(lockDir);
+        writeFileSync(pidFile, String(process.pid));
+        return true;
+      } catch {
+        // Another process beat us to the steal — let caller retry.
+        return false;
+      }
     }
 
     const storedPid = parseInt(storedPidRaw, 10);

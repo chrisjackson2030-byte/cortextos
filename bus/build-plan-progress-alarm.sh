@@ -13,8 +13,13 @@ THRESHOLD_H="${1:-48}"   # hours; arg override for testing
 now=$(date +%s)
 
 [ -f "$LOOP" ] || exit 0
-# last_advanced_at + current gate from loop-state (epoch via python, robust)
-read -r last_epoch gate <<<"$(/Users/chrisjackson/cortextos-data/warehouse/.venv/bin/python - "$LOOP" <<'PY'
+# Terminal-state detection (WS4 2026-06-15): the completion loop CLOSED 2026-06-12
+# (current_iteration=="DONE", all iterations i-x+M status=="complete"). Before this
+# fix the alarm had NO terminal state, so once the plan finished it false-fired
+# "stalled 86h at gate DONE" every 48h forever. Now: if the plan is done, log + exit 0,
+# never ping. A plan that is COMPLETE cannot be STALLED.
+# last_advanced_at + current gate + done-flag from loop-state (epoch via python, robust)
+read -r last_epoch gate done <<<"$(/Users/chrisjackson/cortextos-data/warehouse/.venv/bin/python - "$LOOP" <<'PY'
 import json,sys,datetime as dt
 d=json.load(open(sys.argv[1]))
 la=d.get('last_advanced_at','')
@@ -22,9 +27,28 @@ try:
     e=int(dt.datetime.fromisoformat(la.replace('Z','+00:00')).timestamp())
 except Exception:
     e=0
-print(e, d.get('current_iteration','?'))
+cur=str(d.get('current_iteration','?'))
+status=str(d.get('status',''))
+# Terminal if the current iteration is an explicit terminal token, OR the loop
+# status marks completion, OR every defined iteration has status=="complete".
+iters=d.get('iterations',{})
+all_complete = bool(iters) and all(
+    str(v.get('status','')).lower()=='complete' for v in iters.values()
+)
+terminal = (
+    cur.upper() in ('DONE','COMPLETE','CLOSED','FINISHED')
+    or status.lower() in ('done','complete','completed','closed','finished')
+    or all_complete
+)
+print(e, cur, '1' if terminal else '0')
 PY
 )"
+# Terminal state: plan is done. Log once-per-run and exit without ever alarming.
+if [ "${done:-0}" = "1" ]; then
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  echo "[$ts] DONE build-plan complete (gate $gate) — terminal, no alarm" >> "$STATEF.log" 2>/dev/null
+  exit 0
+fi
 [ "${last_epoch:-0}" -gt 0 ] || exit 0
 age_h=$(( (now - last_epoch) / 3600 ))
 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
