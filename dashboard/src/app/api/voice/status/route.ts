@@ -3,10 +3,17 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { auth } from '@/lib/auth';
+import { getPendingApprovals } from '@/lib/data/approvals';
+import { getTasksCompletedToday } from '@/lib/data/tasks';
+import {
+  approvalToInboxItem,
+  getOpenDecisions,
+  getOpenQuestions,
+  type InboxItem,
+} from '@/lib/data/inbox';
 
 export const dynamic = 'force-dynamic';
 
-const JARVIS_ROOT = path.join(os.homedir(), 'cortextos/orgs/main/agents/jarvis');
 const ORG_ROOT = path.join(os.homedir(), 'cortextos/orgs/main');
 const HB_ROOT = path.join(os.homedir(), '.cortextos/default/state');
 
@@ -21,11 +28,22 @@ interface FleetAgent {
   task: string;
 }
 
+interface PendingItem {
+  title: string;
+  detail: string;
+  source: string; // 'approval' | 'decision' | 'open-question'
+  ageDays: number | null;
+}
+
 interface StatusData {
-  todayWork: string[];
-  pendingQuestions: string[];
+  /** tasks completed today (bus state, live) — replaces the dead memory-line parser */
+  completedToday: { count: number; titles: string[] };
+  /** things actually waiting on B: pending approvals + open decisions + open questions */
+  pendingItems: PendingItem[];
   fleet: FleetAgent[];
   focus: string;
+  focusSetAt: string | null;
+  focusAgeHours: number | null;
   northStar: string;
 }
 
@@ -35,12 +53,13 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const result: StatusData = {
-    todayWork: [],
-    pendingQuestions: [],
+    completedToday: { count: 0, titles: [] },
+    pendingItems: [],
     fleet: [],
     focus: '',
+    focusSetAt: null,
+    focusAgeHours: null,
     northStar: '',
   };
 
@@ -50,36 +69,41 @@ export async function GET() {
       const g = JSON.parse(goals);
       result.focus = g.daily_focus || '';
       result.northStar = g.north_star_vehicle || g.north_star || '';
+      if (g.daily_focus_set_at) {
+        result.focusSetAt = g.daily_focus_set_at;
+        const t = Date.parse(g.daily_focus_set_at);
+        if (!isNaN(t)) result.focusAgeHours = Math.round((Date.now() - t) / 3.6e6);
+      }
     } catch { /* skip */ }
   }
 
-  const memoryFile = readSafe(path.join(JARVIS_ROOT, `memory/${today}.md`));
-  if (memoryFile) {
-    const lines = memoryFile.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('- COMPLETED:') || trimmed.startsWith('- Completed')) {
-        result.todayWork.push(trimmed.replace(/^- (COMPLETED|Completed):?\s*/, ''));
-      } else if (trimmed.startsWith('- WORKING ON:') || trimmed.startsWith('- Working')) {
-        result.todayWork.push(trimmed.replace(/^- (WORKING ON|Working):?\s*/, '') + ' (in progress)');
-      }
-    }
-  }
+  // Tasks completed today from bus state (live) — the old daily-memory line
+  // parser matched a format that drifted and always yielded zero rows.
+  try {
+    const completed = getTasksCompletedToday();
+    result.completedToday = {
+      count: completed.length,
+      titles: completed.slice(0, 5).map((t) => t.title),
+    };
+  } catch { /* skip — panel degrades to 0 */ }
 
-  const pendingFile = readSafe(path.join(JARVIS_ROOT, 'state/pending-b-decisions.md'));
-  if (pendingFile) {
-    const lines = pendingFile.split('\n');
-    let inQueue = false;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed === '## Queue') { inQueue = true; continue; }
-      if (trimmed.startsWith('## ') && inQueue) break;
-      if (trimmed === '---' && inQueue) break;
-      if (inQueue && trimmed.startsWith('- ') && trimmed.length > 3 && !trimmed.includes('**')) {
-        result.pendingQuestions.push(trimmed.slice(2));
-      }
-    }
-  }
+  // AWAITING YOUR INPUT — live sources. The previous source,
+  // state/pending-b-decisions.md, was abandoned Jun 3 (queue "(empty)") so the
+  // panel permanently said "No pending items" while real asks piled up elsewhere.
+  const toPending = (i: InboxItem): PendingItem => ({
+    title: i.title,
+    detail: i.detail,
+    source: i.source,
+    ageDays: i.ageDays,
+  });
+  try {
+    result.pendingItems.push(
+      ...getPendingApprovals().slice(0, 5).map(approvalToInboxItem).map(toPending),
+    );
+  } catch { /* skip */ }
+  result.pendingItems.push(...getOpenDecisions().map(toPending));
+  result.pendingItems.push(...getOpenQuestions().map(toPending));
+  result.pendingItems = result.pendingItems.slice(0, 10);
 
   const agents = ['jarvis', 'forge', 'nova', 'friday'];
   for (const agent of agents) {

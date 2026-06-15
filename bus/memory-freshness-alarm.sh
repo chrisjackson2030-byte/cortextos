@@ -66,8 +66,10 @@ fi
 printf '%s\n%s\n' "$sig" "$now" > "$STATEF"
 
 if [ -n "$fixed" ] && [ -z "$problem" ]; then
-  node "$ROOT/dist/cli.js" bus send-telegram "$CHAT" "⚠️ detected: memory-maintenance was unloaded → ✅ auto-fixed: $fixed. No action needed." >/dev/null 2>&1
-  echo "[$ts] AUTO-FIXED: $fixed" >> "$ALARMLOG"
+  # CONSOLIDATED NOTIFICATION POLICY (2026-06-10): healed-clean = SILENT — shared rollup line
+  # only (daily-rollup surfaces it). Telegram is reserved for the escalation branch below.
+  echo "$ts [memory-freshness] healed-silent: $fixed" >> /Users/chrisjackson/cortextos-data/warehouse/liveness-rollup.log
+  echo "[$ts] AUTO-FIXED (silent -> liveness-rollup): $fixed" >> "$ALARMLOG"
 else
   node "$ROOT/dist/cli.js" bus send-telegram "$CHAT" "⚠️ MEMORY STALENESS — auto-fix couldn't resolve, needs you: $problem.${fixed:+ (auto-fixed: $fixed)} Won't re-ping this for 24h." >/dev/null 2>&1
   echo "[$ts] ESCALATED (deduped 24h): $problem" >> "$ALARMLOG"

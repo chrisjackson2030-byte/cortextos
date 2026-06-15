@@ -109,7 +109,23 @@ export function logInboundMessage(
  *
  * Wrapped: a logEvent failure (e.g. unwritable analytics dir) must not
  * break message processing — the logged inbound JSONL still goes through.
+ *
+ * `media` (optional): for voice/audio/photo/etc messages the caller can pass
+ * the processed-media result so the archive line carries the TRANSCRIPT as
+ * text plus the local file path. Without this, voice memos were archived with
+ * text:"" and no pointer to the .ogg — the archive silently dropped voice
+ * content (2026-06-10 incident: a dying session's unarchived voice directives
+ * had to be recovered by re-running whisper on telegram-images/*.ogg).
  */
+export interface InboundMediaInfo {
+  /** Transcript (voice/audio) or caption text to archive when msg.text is empty. */
+  text?: string;
+  /** Local downloaded file path (e.g. telegram-images/voice_*.ogg) for recovery. */
+  localFile?: string;
+  /** Media type: voice | audio | photo | document | video | video_note. */
+  mediaType?: string;
+}
+
 export function recordInboundTelegram(
   paths: BusPaths,
   ctxRoot: string,
@@ -118,14 +134,21 @@ export function recordInboundTelegram(
   fromName: string,
   msg: TelegramMessage,
   log?: (m: string) => void,
+  media?: InboundMediaInfo,
 ): void {
-  const text = (msg.text || msg.caption || '').toString();
+  const text = (msg.text || msg.caption || media?.text || '').toString();
+  // Only add media fields when present so the base JSONL shape is unchanged
+  // for plain text messages (backwards compat for archive consumers).
+  const mediaFields: Record<string, unknown> = {};
+  if (media?.mediaType) mediaFields.media_type = media.mediaType;
+  if (media?.localFile) mediaFields.local_file = media.localFile;
   logInboundMessage(ctxRoot, agentName, {
     message_id: msg.message_id,
     from: msg.from?.id,
     from_name: fromName,
     chat_id: msg.chat?.id,
     text,
+    ...mediaFields,
     timestamp: new Date().toISOString(),
   });
 

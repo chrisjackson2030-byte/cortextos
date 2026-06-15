@@ -500,6 +500,9 @@ export class AgentManager {
         const effectiveChatId = msgChatId ?? chatId ?? '';
         const stateDir = join(this.ctxRoot, 'state', name);
 
+        // Check for media messages (photo, document, voice, audio, video, video_note)
+        const isMedia = !!(msg.photo || msg.document || msg.voice || msg.audio || msg.video || msg.video_note);
+
         // Persist the inbound message to JSONL AND emit a
         // `message/telegram_received` bus event in one helper so
         // experiment cycles and dashboards can count inbound traffic.
@@ -507,15 +510,19 @@ export class AgentManager {
         // inbound messages on a window where Eros replied to multiple
         // agents — the JSONL had the data but it never reached the
         // event log.
-        recordInboundTelegram(paths, this.ctxRoot, name, resolvedOrg, from, msg, log);
-
-        // Check for media messages (photo, document, voice, audio, video, video_note)
-        const isMedia = !!(msg.photo || msg.document || msg.voice || msg.audio || msg.video || msg.video_note);
+        // For media messages handled below, recording is DEFERRED into the
+        // processMediaMessage continuation so the archive line carries the
+        // voice TRANSCRIPT + local file path instead of text:"" (voice memos
+        // were previously archived empty with no pointer to the .ogg).
+        if (!(isMedia && telegramApi)) {
+          recordInboundTelegram(paths, this.ctxRoot, name, resolvedOrg, from, msg, log);
+        }
 
         if (isMedia && telegramApi) {
           const downloadDir = join(agentDir, 'telegram-images');
           processMediaMessage(msg, telegramApi, downloadDir).then((media) => {
             if (!media) {
+              recordInboundTelegram(paths, this.ctxRoot, name, resolvedOrg, from, msg, log);
               log('Media processing returned null - falling back to text format');
               const text = stripControlChars(msg.caption || '');
               const formatted = FastChecker.formatTelegramTextMessage(from, effectiveChatId, text, this.frameworkRoot);
@@ -532,6 +539,13 @@ export class AgentManager {
             const toRel = (p: string | undefined) => p ? relative(launchDir, p) : '';
             const relImagePath = toRel(media.image_path);
             const relFilePath = toRel(media.file_path);
+
+            // Archive with transcript-as-text + local file path (deferred from above).
+            recordInboundTelegram(paths, this.ctxRoot, name, resolvedOrg, from, msg, log, {
+              text: media.transcript || media.text || '',
+              localFile: media.file_path || media.image_path,
+              mediaType: media.type,
+            });
 
             log(`[DEBUG] media.type=${media.type} image_path=${JSON.stringify(relImagePath)} file_path=${JSON.stringify(relFilePath)}`);
             let formatted: string;
@@ -553,6 +567,7 @@ export class AgentManager {
             log(`Media message received: type=${media.type}, path=${media.image_path || media.file_path}`);
             checker.queueTelegramMessage(formatted);
           }).catch((err) => {
+            recordInboundTelegram(paths, this.ctxRoot, name, resolvedOrg, from, msg, log);
             log(`Media processing error: ${err} - falling back to text format`);
             const text = stripControlChars(msg.caption || '');
             const formatted = FastChecker.formatTelegramTextMessage(from, effectiveChatId, text, this.frameworkRoot);

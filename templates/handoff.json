@@ -1,0 +1,15 @@
+{
+  "task_id": "task_example_001",
+  "from": "dispatching-agent",
+  "to": "receiving-agent",
+  "objective": "State one bounded, testable outcome.",
+  "inputs": [
+    "/absolute/path/to/input"
+  ],
+  "expected_artifacts": [
+    "/absolute/path/to/output"
+  ],
+  "validation_contract": "/absolute/path/to/validation-contract.md",
+  "deadline": "2026-06-13T03:15:00Z",
+  "model_tier": "sonnet"
+}

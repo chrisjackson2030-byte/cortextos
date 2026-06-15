@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, existsSync, unlinkSync, statSync } from 'fs'
 import { join } from 'path';
 import type { Heartbeat, BusPaths } from '../types/index.js';
 import { atomicWriteSync, ensureDir } from '../utils/atomic.js';
+import { parseDurationMs } from './cron-state.js';
 
 /**
  * SessionEnd-hook end-type markers (see src/hooks/hook-crash-alert.ts). A
@@ -144,4 +145,90 @@ export function readAllHeartbeats(paths: BusPaths): Heartbeat[] {
   }
 
   return heartbeats;
+}
+
+/**
+ * The legacy fixed stale threshold (2h). Used as the FLOOR for cadence-aware
+ * staleness — a STALE flag is never raised earlier than this even for a very
+ * short-cadence agent (a single missed beat under a tight loop should not page
+ * the fleet). Also the basis for the default when an agent's cadence is unknown.
+ */
+const STALE_FLOOR_MS = 2 * 60 * 60 * 1000; // 2h
+
+/**
+ * How many expected heartbeat intervals an agent may miss before it is flagged
+ * STALE. A 4h-cadence agent is therefore healthy until 10h of silence (2.5x),
+ * absorbing one fully-missed beat plus jitter without false-flagging. This is
+ * the core fix for the 1-2h-threshold false-positives on Friday/Hermes/Nova.
+ */
+const STALE_INTERVAL_MULTIPLIER = 2.5;
+
+/**
+ * Default expected cadence when an agent's config.json cannot be read or has no
+ * recognisable heartbeat interval. Generous on purpose: a slow/unknown-cadence
+ * agent should not be called dead until it has been silent well past any normal
+ * 4h loop. Yields a 12h effective stale threshold under the multiplier below.
+ */
+const DEFAULT_CADENCE_MS = 4 * 60 * 60 * 1000; // 4h
+
+/**
+ * Read an agent's expected heartbeat cadence (ms) from its config.json
+ * `crons` array — the cron named "heartbeat" (or, failing that, the first
+ * recurring cron with a parseable interval). Returns DEFAULT_CADENCE_MS when
+ * the config is missing/unreadable or has no usable interval.
+ *
+ * config.json lives in the framework repo at
+ *   {frameworkRoot}/orgs/{org}/agents/{agent}/config.json
+ * (NOT under CTX_ROOT). frameworkRoot/org may be empty in some contexts, in
+ * which case we fall straight through to the default.
+ */
+export function getAgentCadenceMs(
+  frameworkRoot: string,
+  org: string,
+  agent: string,
+): number {
+  if (!frameworkRoot || !org) return DEFAULT_CADENCE_MS;
+  const configPath = join(frameworkRoot, 'orgs', org, 'agents', agent, 'config.json');
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const crons: Array<{ name?: string; interval?: string }> = Array.isArray(config?.crons)
+      ? config.crons
+      : [];
+    // Prefer the cron explicitly named "heartbeat".
+    const hb = crons.find(c => c?.name === 'heartbeat' && c?.interval);
+    if (hb?.interval) {
+      const ms = parseDurationMs(hb.interval);
+      if (!Number.isNaN(ms) && ms > 0) return ms;
+    }
+    // Fall back to the first cron with a parseable interval.
+    for (const c of crons) {
+      if (!c?.interval) continue;
+      const ms = parseDurationMs(c.interval);
+      if (!Number.isNaN(ms) && ms > 0) return ms;
+    }
+  } catch {
+    // Missing/unreadable/invalid config — use the default cadence.
+  }
+  return DEFAULT_CADENCE_MS;
+}
+
+/**
+ * Cadence-aware staleness check for a single heartbeat. An agent is STALE only
+ * once its silence exceeds max(STALE_FLOOR_MS, cadence * STALE_INTERVAL_MULTIPLIER).
+ *
+ * This replaces the old fixed 2h threshold, which false-flagged every
+ * 4h-cadence agent (Friday/Hermes/Nova) as STALE after a single normal gap.
+ * `nowMs` is injectable for tests.
+ */
+export function isHeartbeatStale(
+  hb: Heartbeat,
+  frameworkRoot: string,
+  org: string,
+  nowMs: number = Date.now(),
+): boolean {
+  const last = new Date(hb.last_heartbeat ?? hb.timestamp ?? 0).getTime();
+  if (Number.isNaN(last)) return true; // unparseable timestamp — treat as stale
+  const cadence = getAgentCadenceMs(frameworkRoot, hb.org || org, hb.agent);
+  const thresholdMs = Math.max(STALE_FLOOR_MS, cadence * STALE_INTERVAL_MULTIPLIER);
+  return nowMs - last > thresholdMs;
 }

@@ -40,6 +40,21 @@ const nextConfig: NextConfig = {
   // fs reads to absolute paths (command-center.ts) are unaffected.
   turbopack: { root: import.meta.dirname },
   ...(allowedDevOrigins.length > 0 && { allowedDevOrigins }),
+  // 2026-06-10 overhaul — killed/merged pages redirect to their successors so
+  // old bookmarks/deep-links keep working:
+  //   /futures      → superseded by the unified Edge Engine page
+  //   /connections  → killed (word-overlap pairs, no insight) → Inbox
+  //   /throwback    → its one good tile lives on the Jarvis page (SECOND BRAIN)
+  //   /decisions + /new-ideas → merged into the single Inbox page
+  async redirects() {
+    return [
+      { source: '/futures', destination: '/edge-engine', permanent: false },
+      { source: '/connections', destination: '/inbox', permanent: false },
+      { source: '/throwback', destination: '/voice', permanent: false },
+      { source: '/decisions', destination: '/inbox', permanent: false },
+      { source: '/new-ideas', destination: '/inbox', permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

@@ -59,7 +59,10 @@ export function Topbar({ orgs, currentOrg, onOrgChange, onMenuClick }: TopbarPro
       {/* Right: Status bar + Quota + Dark mode toggle + User menu */}
       <div className="flex items-center gap-2">
         <AgentStatusBar />
-        <QuotaIndicator />
+        {/* Quota readout overflows/clips at phone widths — show from sm up */}
+        <div className="hidden sm:block">
+          <QuotaIndicator />
+        </div>
         <Button
           variant="ghost"
           size="icon"

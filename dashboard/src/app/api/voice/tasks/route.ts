@@ -8,7 +8,20 @@ interface ActiveTask {
   id: string;
   assignee: string;
   title: string;
+  description: string;
   priority: string;
+  updatedAt: string | null;
+}
+
+interface BusTask {
+  id?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  assigned_to?: string;
+  priority?: string;
+  updated_at?: string;
+  archived?: boolean;
 }
 
 export async function GET() {
@@ -18,40 +31,33 @@ export async function GET() {
   }
 
   try {
-    const output = execSync('cortextos bus list-tasks --status in_progress', {
+    // Structured JSON output — the old text-table parse split columns on 2+
+    // spaces, which broke as soon as long task IDs ran into the assignee column
+    // (mangled rows: assignee got the title text, title was empty).
+    const output = execSync('cortextos bus list-tasks --status in_progress --format json', {
       encoding: 'utf-8',
       timeout: 10000,
       env: { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH}` },
     });
 
-    const tasks: ActiveTask[] = [];
-    const lines = output.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      // Skip headers, separators, empty lines, and the "Tasks (N)" line
-      if (
-        !trimmed ||
-        trimmed.startsWith('Status') ||
-        trimmed.startsWith('---') ||
-        trimmed.startsWith('Tasks')
-      ) {
-        continue;
-      }
-
-      // Lines look like: "●       🔵   task_178...   friday    Title text here"
-      // Split on 2+ whitespace to parse columns
-      const parts = trimmed.split(/\s{2,}/);
-      if (parts.length >= 4) {
-        // parts: [status_icon, priority_icon, id, assignee, ...title parts]
-        tasks.push({
-          id: parts[2] || '',
-          assignee: parts[3] || '',
-          title: parts.slice(4).join(' ') || '',
-          priority: parts[1] || '',
-        });
-      }
+    let parsed: BusTask[];
+    try {
+      parsed = JSON.parse(output);
+    } catch {
+      return NextResponse.json({ tasks: [] });
     }
+    if (!Array.isArray(parsed)) return NextResponse.json({ tasks: [] });
+
+    const tasks: ActiveTask[] = parsed
+      .filter((t) => !t.archived)
+      .map((t) => ({
+        id: t.id ?? '',
+        assignee: t.assigned_to ?? '',
+        title: t.title ?? '',
+        description: t.description ?? '',
+        priority: t.priority ?? '',
+        updatedAt: t.updated_at ?? null,
+      }));
 
     return NextResponse.json({ tasks });
   } catch {

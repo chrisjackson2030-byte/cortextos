@@ -259,9 +259,14 @@ def get_trading_systems_state() -> list[str]:
     # bot placed but never recorded. The bot's own numbers LIE; the broker is authoritative
     # ([[feedback_reconcile_pnl_vs_broker]]). Fail-soft: if the broker can't be read, say so —
     # do NOT fall back to the local DB.
-    opt_dir = home / ".openclaw" / "workspace" / "discord-options-bot"
+    # PATH FIX 2026-06-10 (T10): the LIVE bot lives at ~/.openclaw/workspace/discordbot/
+    # (launchd ai.discordbot.agent; KILL_SWITCH_PATH = discordbot/KILL_SWITCH per
+    # src/discordbot/services/halt_state.py). The old scan pointed at the DEAD May-12
+    # prototype dir discord-options-bot/, whose leftover KILL_SWITCH file made the boot
+    # index claim "ARMED" while the live bot was actually live/disarmed (stale-claim bug).
+    opt_dir = home / ".openclaw" / "workspace" / "discordbot"
     if opt_dir.is_dir():
-        ks = "ARMED" if (opt_dir / "KILL_SWITCH").exists() else "DISARMED"
+        ks = "ARMED" if (opt_dir / "KILL_SWITCH").exists() else "ABSENT (= live/disarmed)"
         broker_line = None
         try:
             import urllib.request, json, subprocess
@@ -290,6 +295,112 @@ def get_trading_systems_state() -> list[str]:
                    f"KILL_SWITCH: {ks}. NOTE: bot's own positions.db UNDER-RECORDS (placed a real Jun-2 trade it never logged) — broker is truth.")
 
     return out
+
+
+def get_agent_runtimes(framework_root: str, org: str) -> tuple[list[str], list[str]]:
+    """Surface each fleet agent's ACTUAL runtime live from its config.json, plus any
+    codex-fallback runtime-override stamp. Makes 'which agent is on which runtime' a
+    live-from-disk fact (same self-healing class as the trading registry) instead of
+    static dream-cadence prose. Root-cause fix for the 2026-06-15 recall-miss: codex-
+    fallback.sh flipped forge/hermes to claude-code but wrote nothing to memory, so the
+    static 'Forge/Hermes DOWN, Codex-capped' fact stayed wrong ~13h.
+
+    Returns (runtime_lines, mismatch_banner_lines). The banner fires when static memory
+    still asserts an agent is down/capped while its live config.json says claude-code.
+    Fails soft."""
+    agents_dir = Path(framework_root) / "orgs" / org / "agents"
+    if not agents_dir.is_dir():
+        return [], []
+
+    # Load the codex-fallback override stamp (live record of any runtime flip).
+    overrides = {}
+    override_path = Path(framework_root) / "orgs" / org / "agents" / "jarvis" / "state" / "agent-runtime-overrides.json"
+    try:
+        if override_path.is_file():
+            raw = json.loads(override_path.read_text())
+            if isinstance(raw, dict):
+                overrides = {k: v for k, v in raw.items() if not k.startswith("_") and isinstance(v, dict)}
+    except Exception:
+        overrides = {}
+
+    runtime_lines: list[str] = []
+    runtimes: dict[str, str] = {}
+    for cfg in sorted(agents_dir.glob("*/config.json")):
+        agent = cfg.parent.name
+        # Skip scratch/draft/test workspaces — only real fleet agents.
+        if agent.startswith("_") or agent.startswith(".") or "test-" in agent or agent.endswith("-study") or agent.endswith("-redesign") or agent.endswith("-drafts"):
+            continue
+        try:
+            d = json.loads(cfg.read_text())
+        except Exception:
+            continue
+        # config.json may omit runtime; cortextOS default is claude-code.
+        runtime = d.get("runtime") or "claude-code"
+        model = d.get("model", "?")
+        runtimes[agent] = runtime
+        fb = " ⚠️_codex-fallback active_" if d.get("_codex_fallback_active") else ""
+        ov = overrides.get(agent)
+        ov_note = ""
+        if ov:
+            ov_note = (f" · override: {ov.get('from_runtime','?')}→{ov.get('to_runtime','?')} "
+                       f"({ov.get('reason','')}) @ {ov.get('timestamp','?')}")
+        runtime_lines.append(f"- **{agent}** — runtime=`{runtime}`, model=`{model}`{fb}{ov_note}")
+
+    # Interim guard: scan static memory prose for stale 'down/capped' claims that
+    # contradict a live claude-code runtime. If found, emit a trust-config banner.
+    mismatch: list[str] = []
+    DOWN_MARKERS = ("down", "capped", "weekly-cap", "outage", "cannot run", "offline")
+    mem_candidates = [
+        Path.home() / ".claude" / "projects" / "-Users-chrisjackson-cortextos" / "memory" / "MEMORY.md",
+        Path.home() / ".claude" / "projects" / "-Users-chrisjackson-cortextos" / "memory" / "forge-facts.md",
+        Path.home() / ".claude" / "projects" / "-Users-chrisjackson-cortextos" / "memory" / "codex-facts.md",
+    ]
+    for agent, runtime in runtimes.items():
+        if runtime != "claude-code":
+            continue
+        for mp in mem_candidates:
+            try:
+                if not mp.is_file():
+                    continue
+                text = mp.read_text(errors="ignore").lower()
+            except Exception:
+                continue
+            # Look at lines that name the agent AND assert a down/capped state, with the
+            # marker in close proximity (≤40 chars) to the agent name so we don't flag a
+            # multi-agent headline that merely mentions the agent and 'capped' far apart.
+            CORRECTION_MARKERS = ("superseded", "✅", "stop relaying", "stop saying",
+                                  "not down", "is alive", "correction", "alive on claude")
+            hit = False
+            for ln in text.splitlines():
+                if agent not in ln:
+                    continue
+                # Skip lines that are themselves corrections (they mention the agent + a
+                # down-marker only to refute it) — those are not stale assertions.
+                if any(c in ln for c in CORRECTION_MARKERS):
+                    continue
+                # Check EVERY occurrence of the agent name — a down-marker within ±40 chars
+                # of ANY occurrence on the line is a stale assertion.
+                start = 0
+                near = False
+                while True:
+                    idx = ln.find(agent, start)
+                    if idx == -1:
+                        break
+                    window = ln[max(0, idx - 40): idx + len(agent) + 40]
+                    if any(m in window for m in DOWN_MARKERS):
+                        near = True
+                        break
+                    start = idx + len(agent)
+                if near:
+                    mismatch.append(
+                        f"- **{agent}**: live config.json = `claude-code` (ALIVE), but `{mp.name}` "
+                        f"still asserts down/capped near it. TRUST config.json — the prose is stale.")
+                    hit = True
+                    break
+            if hit:
+                break
+
+    return runtime_lines, mismatch
 
 
 def get_strategist_decisions(max_chars: int = 1800) -> str:
@@ -365,6 +476,25 @@ def generate_context(agent_name: str, org: str) -> str:
                      "Before stating anything about trades/P&L/'never traded', name the SYSTEM and use these numbers — "
                      "never generalize one system's status to another (root-cause fix for the 2026-06-03 Kalshi-vs-options blur)._")
         lines.extend(systems)
+        lines.append("---")
+        lines.append("")
+    runtime_lines, runtime_mismatch = get_agent_runtimes(framework_root, org)
+    if runtime_mismatch:
+        lines.append("## ⚠️ RUNTIME MISMATCH — trust config.json over memory prose")
+        lines.append("_A static memory file still asserts an agent is down/capped while its LIVE "
+                     "config.json says `claude-code` (alive). The prose is stale — trust config.json. "
+                     "(Interim guard for the 2026-06-15 recall-miss class.)_")
+        lines.extend(runtime_mismatch)
+        lines.append("---")
+        lines.append("")
+    if runtime_lines:
+        lines.append("## ⚙️ FLEET RUNTIME (live from config.json)")
+        lines.append("_Each agent's ACTUAL runtime read from its config.json this run, plus any "
+                     "codex-fallback override stamp. This is a LIVE-from-disk fact (self-healing, same "
+                     "class as the trading registry) — never trust stale prose about which agent is "
+                     "'down'/'on Codex'/'capped'; trust THIS. (Root-cause fix for the 2026-06-15 "
+                     "runtime-flip recall-miss.)_")
+        lines.extend(runtime_lines)
         lines.append("---")
         lines.append("")
     verdicts = get_strategy_verdicts()
@@ -476,6 +606,8 @@ def write_boot_index(framework_root: str, agent_name: str, org: str, content: st
                 return ("## " + body[:cut]).rstrip() if cut != -1 else ("## " + body).rstrip()
         return ""
     compact = "\n\n".join(s for s in [
+        _section("## ⚠️ RUNTIME MISMATCH"),
+        _section("## ⚙️ FLEET RUNTIME"),
         _section("## ⚡ Established Workflows / Reflexes"),
         _section("## 💰 Trading Systems Registry"),
         _section("## ⛔ Strategy Verdicts / Killed Edges"),
