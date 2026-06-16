@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import s from './voice.module.css';
 
 interface VoiceExchange {
@@ -28,11 +29,20 @@ interface FleetAgent {
   task: string;
 }
 
+interface PendingItem {
+  title: string;
+  detail: string;
+  source: string; // 'approval' | 'decision' | 'open-question'
+  ageDays: number | null;
+}
+
 interface StatusData {
-  todayWork: string[];
-  pendingQuestions: string[];
+  completedToday: { count: number; titles: string[] };
+  pendingItems: PendingItem[];
   fleet: FleetAgent[];
   focus: string;
+  focusSetAt: string | null;
+  focusAgeHours: number | null;
   northStar: string;
 }
 
@@ -75,7 +85,27 @@ interface ActiveTask {
   id: string;
   assignee: string;
   title: string;
+  description: string;
   priority: string;
+  updatedAt: string | null;
+}
+
+interface EdgeFamily {
+  family: string;
+  arena: string;
+  verdict: string;
+  reason: string;
+}
+
+interface EdgeEngineData {
+  available: boolean;
+  generated_at?: string;
+  attempts_logged?: number;
+  families_tested?: EdgeFamily[];
+  proven_edges?: number;
+  live_lead?: string;
+  scoreboard?: string;
+  data_cost?: string;
 }
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking';
@@ -101,10 +131,10 @@ export default function VoicePage() {
   const [tradingData, setTradingData] = useState<TradingData | null>(null);
   const [optionsData, setOptionsData] = useState<OptionsData | null>(null);
   const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([]);
+  const [edgeData, setEdgeData] = useState<EdgeEngineData | null>(null);
   const [brainData, setBrainData] = useState<{
     ideas: { title: string; source: string; daysSince: number | null }[];
     throwback: { title: string; source: string; daysSince: number | null } | null;
-    connections: { a: string; b: string; shared: string[] }[];
   } | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionCompat | null>(null);
@@ -174,6 +204,15 @@ export default function VoicePage() {
     loadOptions();
     const optionsInterval = setInterval(loadOptions, 30000);
 
+    const loadEdge = () => {
+      fetch('/api/edge-engine')
+        .then((r) => r.json())
+        .then((data: EdgeEngineData) => setEdgeData(data))
+        .catch(() => {});
+    };
+    loadEdge();
+    const edgeInterval = setInterval(loadEdge, 60000);
+
     const loadTasks = () => {
       fetch('/api/voice/tasks')
         .then((r) => r.json())
@@ -199,6 +238,7 @@ export default function VoicePage() {
       clearInterval(tradingInterval);
       clearInterval(brainInterval);
       clearInterval(optionsInterval);
+      clearInterval(edgeInterval);
       clearInterval(tasksInterval);
     };
   }, []);
@@ -403,161 +443,275 @@ export default function VoicePage() {
   const pnlColor = (n: number) => (n >= 0 ? '#00FF88' : '#FF4444');
   const fmtPnl = (n: number) => `${n >= 0 ? '+' : ''}$${Math.abs(n).toFixed(2)}`;
 
-  return (
-    <div className={s.scene}>
-    <div className={s.hero}>
-      <div className={s.grid} />
-      <div className={s.vignette} />
-      <div className={s.scanline} />
+  // Hours since an ISO timestamp; null if unparseable.
+  const hoursSince = (iso?: string | null): number | null => {
+    if (!iso) return null;
+    const t = Date.parse(iso);
+    return isNaN(t) ? null : Math.max(0, Math.round((Date.now() - t) / 3.6e6));
+  };
+  const fmtAge = (h: number | null): string => {
+    if (h === null) return '?';
+    if (h < 1) return '<1h';
+    if (h < 48) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  };
+  // Staleness chip — green when fresh, amber when stale, so silent staleness
+  // is visible instead of invisible (the old panels just froze with green dots).
+  const ageChip = (h: number | null, staleAfterH = 24) => (
+    <span
+      style={{
+        fontSize: '10px',
+        padding: '1px 6px',
+        borderRadius: '3px',
+        letterSpacing: '0.1em',
+        color: h !== null && h > staleAfterH ? '#FFB800' : 'rgba(224,240,255,0.55)',
+        border: `1px solid ${h !== null && h > staleAfterH ? 'rgba(255,184,0,0.4)' : 'rgba(224,240,255,0.18)'}`,
+      }}
+    >
+      {fmtAge(h)} AGO
+    </span>
+  );
+  // Panel header that drills down to its detail page.
+  const panelHeader = (label: string, href: string, chip?: React.ReactNode) => (
+    <div className={s.hudPanelHeader} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Link href={href} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open ${href}`}>
+        {label} <span style={{ opacity: 0.55 }}>›</span>
+      </Link>
+      {chip}
+    </div>
+  );
 
-      <div className={`${s.hudCorner} ${s.hudCornerTL}`} />
-      <div className={`${s.hudCorner} ${s.hudCornerTR}`} />
-      <div className={`${s.hudCorner} ${s.hudCornerBL}`} />
-      <div className={`${s.hudCorner} ${s.hudCornerBR}`} />
+  const verdictColor = (v: string) =>
+    v.startsWith('PROMISING') || v === 'CONFIRMED' ? '#00FF88' : v === 'VALIDATING' ? '#FFB800' : '#FF4444';
 
-      <div className="relative z-10 flex h-full">
-        {/* Left panel — Trading P&L + Tasks + Fleet */}
-        <div
-          className="hidden lg:flex w-80 xl:w-96 flex-col px-5 pt-5 pb-12 gap-4 overflow-y-auto"
-          style={{ maxHeight: '100%' }}
-        >
-          {/* HUD timestamp */}
-          <div className={s.hudTimestamp}>{hudTime}</div>
+  const sourceChipStyle = (src: string): React.CSSProperties => ({
+    fontSize: '9px',
+    padding: '1px 5px',
+    borderRadius: '3px',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase' as const,
+    color: src === 'approval' ? '#FFB800' : src === 'decision' ? '#00D4FF' : '#B0D0E8',
+    border: `1px solid ${src === 'approval' ? 'rgba(255,184,0,0.4)' : src === 'decision' ? 'rgba(0,212,255,0.35)' : 'rgba(176,208,232,0.3)'}`,
+    flexShrink: 0,
+  });
 
-          {/* LIVE TRADING — real money only (paper lives on the Operations dashboard) */}
+  // Click-to-expand text: collapsed = clean line-clamp (never a mid-line cut),
+  // long text gets a visible "more/less" affordance. threshold ≈ chars that fit
+  // the collapsed clamp — under it we render plain (no fake affordance).
+  const expandableText = (
+    key: string,
+    text: string,
+    opts: { clamp?: 'clamp1' | 'clamp2' | 'clamp4'; threshold?: number; className?: string; style?: React.CSSProperties } = {},
+  ) => {
+    const { clamp = 'clamp2', threshold = 70, className = '', style } = opts;
+    const isExpanded = expandedPanelItem === key;
+    const long = text.length > threshold;
+    if (!long) {
+      return <div className={className} style={style}>{text}</div>;
+    }
+    return (
+      <div onClick={(e) => { e.stopPropagation(); togglePanelItem(key); }} style={{ cursor: 'pointer' }} title={isExpanded ? 'Click to collapse' : 'Click to expand'}>
+        <div className={`${isExpanded ? '' : s[clamp]} ${className}`} style={style}>{text}</div>
+        <div className={s.expandHint}>{isExpanded ? '▾ less' : '▸ more'}</div>
+      </div>
+    );
+  };
+
+  /* ── Panels (consts so desktop columns + the <lg stacked layout share JSX) ── */
+
+  // MONEY — Alpaca options bot first (live), Kalshi second with an explicit FROZEN chip.
+  const moneyPanel = (
           <div className={s.hudPanelBracketed}>
-            <div className={s.hudPanelHeader}>LIVE TRADING · REAL $</div>
-            {tradingData ? (
-              <div style={{ fontFamily: 'var(--font-jetbrains)' }}>
-                {/* Prediction markets — Sidewinder (the only live prediction lane) */}
-                <div style={{ marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00FF88', boxShadow: '0 0 8px rgba(0,255,136,0.6)' }} />
-                    <span style={{ color: '#00FF88', fontSize: '12px', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600 }}>
-                      Sidewinder · Kalshi
+            {panelHeader('MONEY', '/options')}
+            <div style={{ fontFamily: 'var(--font-jetbrains)' }}>
+              {/* Options bot — LIVE (Alpaca account + bot status) */}
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#00D4FF', fontSize: '12px', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600 }}>
+                    Options · Alpaca
+                  </span>
+                  {optionsData ? (
+                    <span style={{
+                      color: optionsData.kill_switch?.armed ? '#FF4444' : optionsData.status === 'LIVE' ? '#00FF88' : '#FFB800',
+                      fontWeight: 600, fontSize: '12px',
+                    }}>
+                      {optionsData.kill_switch?.armed ? 'HALTED' : optionsData.status}
                     </span>
+                  ) : null}
+                </div>
+                {optionsData?.account ? (
+                  <>
+                    <div style={{ fontSize: '30px', fontWeight: 700, color: '#E0F0FF', lineHeight: 1.05 }}>
+                      ${optionsData.account.equity.toLocaleString()}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(224,240,255,0.7)', fontSize: '12px', marginTop: '5px' }}>
+                      <span>${optionsData.account.options_buying_power.toLocaleString()} BP
+                        {optionsData.account.options_level != null ? ` · L${optionsData.account.options_level}` : ''}</span>
+                      <span>{optionsData.summary?.open_positions ?? 0} open · {optionsData.summary?.filled ?? 0} filled</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ color: 'rgba(224,240,255,0.45)', fontSize: '13px' }}>
+                    {optionsData ? 'No account snapshot' : 'Loading...'}
                   </div>
-                  {tradingData.live.total > 0 ? (
-                    <>
-                      <div style={{ fontSize: '30px', fontWeight: 700, color: pnlColor(tradingData.live.netPnl), lineHeight: 1.05 }}>
-                        {fmtPnl(tradingData.live.netPnl)}
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(224,240,255,0.7)', fontSize: '13px', marginTop: '5px' }}>
-                        <span>{tradingData.live.total} trades</span>
-                        <span>{tradingData.live.wins}W / {tradingData.live.losses}L</span>
-                        <span>{tradingData.live.winRate}%</span>
-                      </div>
-                      {tradingData.live.lastTrade && (
-                        <div style={{ marginTop: '7px', fontSize: '12px', color: 'rgba(224,240,255,0.5)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>last: {tradingData.live.lastTrade.lane} {tradingData.live.lastTrade.direction}</span>
-                          <span style={{ color: pnlColor(tradingData.live.lastTrade.pnl) }}>{fmtPnl(tradingData.live.lastTrade.pnl)}</span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ color: 'rgba(224,240,255,0.45)', fontSize: '13px' }}>No live trades yet</div>
-                  )}
-                  {tradingData.kalshiAccount && (
-                    <div style={{ marginTop: '8px', paddingTop: '7px', borderTop: '1px solid rgba(0,255,136,0.12)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 700, color: '#E0F0FF' }}>
+                )}
+              </div>
+
+              {/* Kalshi — frozen by B's call 06-03; chip says so instead of a green dot */}
+              <div style={{ borderTop: '1px solid rgba(255,184,0,0.15)', paddingTop: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <span style={{ color: 'rgba(224,240,255,0.65)', fontSize: '11px', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600 }}>
+                    Sidewinder · Kalshi
+                  </span>
+                  <span style={{
+                    fontSize: '10px', padding: '1px 6px', borderRadius: '3px', letterSpacing: '0.1em',
+                    color: '#FFB800', border: '1px solid rgba(255,184,0,0.4)', fontWeight: 600,
+                  }}>
+                    FROZEN 06-03
+                  </span>
+                </div>
+                {tradingData ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px', color: 'rgba(224,240,255,0.6)' }}>
+                    <span>
+                      <span style={{ color: pnlColor(tradingData.live.netPnl), fontWeight: 700 }}>{fmtPnl(tradingData.live.netPnl)}</span>
+                      {' '}· {tradingData.live.total} trades · {tradingData.live.wins}W/{tradingData.live.losses}L
+                    </span>
+                    {tradingData.kalshiAccount && (
+                      <span style={{ color: '#E0F0FF', fontWeight: 600 }}>
                         ${tradingData.kalshiAccount.total_value.toFixed(2)}
                       </span>
-                      <span style={{ fontSize: '12px', color: 'rgba(224,240,255,0.6)' }}>
-                        in account · net{' '}
-                        <span style={{ color: pnlColor(tradingData.kalshiAccount.net_pnl) }}>{fmtPnl(tradingData.kalshiAccount.net_pnl)}</span>{' '}
-                        (fees in)
-                      </span>
-                    </div>
-                  )}
-                  {tradingData.allocation && tradingData.allocation.strategies.length > 0 && (
-                    <div style={{ marginTop: '8px', paddingTop: '7px', borderTop: '1px solid rgba(0,255,136,0.12)' }}>
-                      <div style={{ fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(224,240,255,0.4)', marginBottom: '5px' }}>
-                        Capital by strategy
-                      </div>
-                      {tradingData.allocation.strategies.map((s) => (
-                        <div key={s.strategy_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' }}>
-                          <span style={{ fontSize: '12px', color: '#E0F0FF' }}>{s.display_name}</span>
-                          <span style={{ fontSize: '12px', color: 'rgba(224,240,255,0.6)' }}>
-                            ${s.current_value.toFixed(2)} ·{' '}
-                            <span style={{ color: pnlColor(s.realized_pnl) }}>{fmtPnl(s.realized_pnl)}</span> net · {s.wins}W/{s.losses}L
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    )}
+                  </div>
+                ) : (
+                  <p className={s.hudPanelText}>Loading...</p>
+                )}
+              </div>
+            </div>
+          </div>
+  );
+
+  // EDGE ENGINE — the live hunt (edge-engine-state.json, regenerated each drive cycle).
+  const edgePanel = (
+          <div className={s.hudPanelBracketed}>
+            {panelHeader('EDGE ENGINE', '/edge-engine', ageChip(hoursSince(edgeData?.generated_at)))}
+            {edgeData?.available ? (
+              <div style={{ fontFamily: 'var(--font-jetbrains)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: '26px', fontWeight: 700, color: '#E0F0FF', lineHeight: 1.05 }}>
+                    {edgeData.attempts_logged ?? 0}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'rgba(224,240,255,0.55)' }}>attempts logged</span>
                 </div>
-                {/* Options bot — live (account + status) */}
-                {optionsData && (
-                  <div style={{ borderTop: '1px solid rgba(0,212,255,0.12)', paddingTop: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ color: '#00D4FF', fontSize: '12px', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600 }}>
-                        Options · Alpaca
-                      </span>
-                      <span style={{
-                        color: optionsData.kill_switch?.armed ? '#FF4444' : optionsData.status === 'LIVE' ? '#00FF88' : '#FFB800',
-                        fontWeight: 600, fontSize: '12px',
-                      }}>
-                        {optionsData.kill_switch?.armed ? 'HALTED' : optionsData.status}
-                      </span>
-                    </div>
-                    {optionsData.account ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: '20px', fontWeight: 700, color: '#E0F0FF' }}>
-                          ${optionsData.account.equity.toLocaleString()}
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'rgba(224,240,255,0.6)' }}>
-                          ${optionsData.account.options_buying_power.toLocaleString()} BP
-                          {optionsData.account.options_level != null ? ` · L${optionsData.account.options_level}` : ''}
-                        </span>
-                      </div>
-                    ) : null}
-                    <div style={{ marginTop: '5px', fontSize: '12px', color: 'rgba(224,240,255,0.5)' }}>
-                      {optionsData.summary?.open_positions ?? 0} open · {optionsData.summary?.filled ?? 0} filled
-                    </div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', marginTop: '5px' }}>
+                  <span style={{ color: '#00FF88' }}>
+                    {(edgeData.families_tested ?? []).filter((f) => f.verdict.startsWith('PROMISING')).length} promising
+                  </span>
+                  <span style={{ color: '#FF4444' }}>
+                    {(edgeData.families_tested ?? []).filter((f) => f.verdict === 'REJECT').length} rejected
+                  </span>
+                  <span style={{ color: 'rgba(224,240,255,0.6)' }}>{edgeData.proven_edges ?? 0} proven</span>
+                </div>
+                {edgeData.live_lead && (
+                  <div style={{ marginTop: '7px' }}>
+                    {expandableText('edge-lead', edgeData.live_lead, {
+                      clamp: 'clamp2',
+                      threshold: 80,
+                      style: { fontSize: '11px', color: 'rgba(224,240,255,0.75)', lineHeight: 1.45 },
+                    })}
+                  </div>
+                )}
+                {(edgeData.families_tested ?? []).length > 0 && (
+                  <div style={{ marginTop: '8px', paddingTop: '7px', borderTop: '1px solid rgba(0,212,255,0.1)' }}>
+                    {(edgeData.families_tested ?? []).map((f, i) => {
+                      const key = `family-${i}`;
+                      const isExpanded = expandedPanelItem === key;
+                      return (
+                        <div key={key} onClick={() => togglePanelItem(key)} style={{ cursor: 'pointer', padding: '5px 0' }} title="Click for verdict reason">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px' }}>
+                            <span style={isExpanded
+                              ? { color: '#E0F0FF' }
+                              : { color: '#E0F0FF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {f.family.replace(/_/g, ' ')} <span style={{ color: 'rgba(224,240,255,0.4)' }}>· {f.arena}</span>
+                            </span>
+                            <span style={{ color: verdictColor(f.verdict), flexShrink: 0, fontWeight: 600 }}>
+                              {f.verdict.startsWith('PROMISING') ? 'LEAD' : f.verdict}
+                            </span>
+                          </div>
+                          {isExpanded && (
+                            <div style={{ fontSize: '11px', color: 'rgba(224,240,255,0.6)', marginTop: '2px', lineHeight: 1.4 }}>
+                              {f.reason}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             ) : (
-              <p className={s.hudPanelText}>Loading...</p>
+              <p className={s.hudPanelText}>{edgeData ? 'State file unavailable' : 'Loading...'}</p>
             )}
           </div>
+  );
 
-          <div className={s.hudAccentLine} />
-
-          {/* Active Tasks */}
+  // ACTIVE TASKS — structured JSON feed; rows expand to full detail
+  const tasksPanel = (
           <div className={s.hudPanelBracketed}>
-            <div className={s.hudPanelHeader}>ACTIVE TASKS</div>
+            {panelHeader('ACTIVE TASKS', '/tasks')}
             {activeTasks.length > 0 ? (
-              activeTasks.slice(0, 6).map((task, i) => (
-                <div
-                  key={task.id || i}
-                  style={{
-                    fontFamily: 'var(--font-jetbrains)',
-                    fontSize: '13px',
-                    padding: '9px 0',
-                    borderBottom: i < Math.min(activeTasks.length, 6) - 1 ? '1px solid rgba(0,212,255,0.08)' : 'none',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#00D4FF', fontSize: '12px', textTransform: 'capitalize', letterSpacing: '0.05em' }}>
-                      {task.assignee}
-                    </span>
+              activeTasks.slice(0, 6).map((task, i) => {
+                const key = `task-${task.id || i}`;
+                const isExpanded = expandedPanelItem === key;
+                return (
+                  <div
+                    key={task.id || i}
+                    onClick={() => togglePanelItem(key)}
+                    title="Click for task detail"
+                    style={{
+                      fontFamily: 'var(--font-jetbrains)',
+                      fontSize: '13px',
+                      padding: '9px 0',
+                      cursor: 'pointer',
+                      borderBottom: i < Math.min(activeTasks.length, 6) - 1 ? '1px solid rgba(0,212,255,0.08)' : 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#00D4FF', fontSize: '12px', textTransform: 'capitalize', letterSpacing: '0.05em' }}>
+                        {task.assignee}
+                      </span>
+                      {task.updatedAt && (
+                        <span style={{ color: 'rgba(224,240,255,0.4)', fontSize: '10px' }}>
+                          {fmtAge(hoursSince(task.updatedAt))}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={isExpanded ? undefined : s.clamp2}
+                      style={{ color: 'rgba(224,240,255,0.85)', marginTop: '3px', lineHeight: '1.45' }}
+                    >
+                      {task.title}
+                    </div>
+                    {isExpanded && (
+                      <div style={{ marginTop: '5px', fontSize: '11px', color: 'rgba(224,240,255,0.6)', lineHeight: 1.5 }}>
+                        {task.description && <div style={{ marginBottom: '4px' }}>{task.description}</div>}
+                        <div style={{ color: 'rgba(224,240,255,0.4)' }}>
+                          {task.id} · {task.priority || 'normal'}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div style={{ color: 'rgba(224,240,255,0.85)', marginTop: '3px', lineHeight: '1.45' }}>
-                    {task.title.length > 64 ? task.title.slice(0, 64) + '...' : task.title}
-                  </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <p className={s.hudPanelText}>No active tasks</p>
             )}
           </div>
+  );
 
-          <div className={s.hudAccentLine} />
-
-          {/* Fleet Status */}
+  // FLEET STATUS — task lines expand in place
+  const fleetPanel = (
           <div className={s.hudPanelBracketed}>
-            <div className={s.hudPanelHeader}>FLEET STATUS</div>
+            {panelHeader('FLEET STATUS', '/agents')}
             {statusData?.fleet && statusData.fleet.length > 0 ? (
               statusData.fleet.map((a) => (
                 <div key={a.name}>
@@ -566,50 +720,60 @@ export default function VoicePage() {
                     <span className={s.hudFleetName}>{a.name}</span>
                     <span className={s.hudFleetAgo}>{a.minutesAgo}m</span>
                   </div>
-                  {a.task && <div className={s.hudFleetTask}>{a.task}</div>}
+                  {a.task && (
+                    <div className={s.hudFleetTask}>
+                      {expandableText(`fleet-${a.name}`, a.task, { clamp: 'clamp2', threshold: 80 })}
+                    </div>
+                  )}
                 </div>
               ))
             ) : (
               <p className={s.hudPanelText}>Loading...</p>
             )}
           </div>
+  );
 
-          {/* Second Brain — ideas / throwback / connections at a glance */}
+  // SECOND BRAIN — throwback tile + freshest ideas, all rows expandable
+  const brainPanel = (
           <div className={s.hudPanelBracketed}>
-            <div className={s.hudPanelHeader}>SECOND BRAIN</div>
+            {panelHeader('SECOND BRAIN', '/inbox')}
             {brainData ? (
               <>
                 {brainData.throwback && (
-                  <div style={{ marginBottom: '6px' }}>
-                    <div style={{ fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(224,240,255,0.35)', textTransform: 'uppercase' }}>Throwback</div>
-                    <div style={{ fontSize: '11px', color: '#E0F0FF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{brainData.throwback.title}</div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(224,240,255,0.35)', textTransform: 'uppercase', marginBottom: '2px' }}>
+                      Throwback{brainData.throwback.daysSince != null ? ` · ${brainData.throwback.daysSince}d cold` : ''}
+                    </div>
+                    {expandableText('brain-throwback', brainData.throwback.title, {
+                      clamp: 'clamp1',
+                      threshold: 38,
+                      style: { fontSize: '11px', color: '#E0F0FF', lineHeight: 1.5 },
+                    })}
                   </div>
                 )}
-                <div style={{ fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(224,240,255,0.35)', textTransform: 'uppercase', marginBottom: '2px' }}>New Ideas</div>
+                <div style={{ fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(224,240,255,0.35)', textTransform: 'uppercase', marginBottom: '4px' }}>New Ideas</div>
                 {brainData.ideas.length > 0 ? (
                   brainData.ideas.slice(0, 4).map((idea, i) => (
-                    <div key={i} style={{ fontSize: '11px', color: 'rgba(224,240,255,0.8)', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {idea.title}</div>
+                    <div key={i} style={{ marginBottom: '4px' }}>
+                      {expandableText(`idea-${i}`, `· ${idea.title}`, {
+                        clamp: 'clamp1',
+                        threshold: 40,
+                        style: { fontSize: '11px', color: 'rgba(224,240,255,0.8)', lineHeight: 1.5 },
+                      })}
+                    </div>
                   ))
                 ) : (
                   <div style={{ fontSize: '11px', color: 'rgba(224,240,255,0.4)' }}>none yet</div>
-                )}
-                {brainData.connections.length > 0 && (
-                  <div style={{ marginTop: '6px' }}>
-                    <div style={{ fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(224,240,255,0.35)', textTransform: 'uppercase', marginBottom: '2px' }}>Connections</div>
-                    {brainData.connections.slice(0, 2).map((c, i) => (
-                      <div key={i} style={{ fontSize: '10px', color: 'rgba(224,240,255,0.65)', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.a} ↔ {c.b}</div>
-                    ))}
-                  </div>
                 )}
               </>
             ) : (
               <p className={s.hudPanelText}>Loading...</p>
             )}
           </div>
-        </div>
+  );
 
-        {/* Center */}
-        <div className="flex-1 flex flex-col items-center justify-center px-4 gap-4">
+  const centerSection = (
+        <div className="flex-1 flex flex-col items-center justify-center px-4 gap-4 py-10 lg:py-0 min-h-[70vh] lg:min-h-0">
           {/* Status */}
           <div className="flex items-center gap-3">
             <div className={statusDotClass} />
@@ -630,9 +794,12 @@ export default function VoicePage() {
           >
             <div className={orbGlowClass} />
             <div className={s.orbRing3} />
+            <div className={s.orbArcReverse} />
             <div className={s.orbRing2} />
+            <div className={s.orbArc} />
             <div className={s.orbRing1} />
             <div className={orbCoreClass} />
+            <div className={s.orbSpecular} />
             {voiceState === 'listening' && <div className={s.orbMicIcon}>&#9673;</div>}
             {voiceState === 'speaking' && (
               <div className={s.waveformContainer}>
@@ -648,13 +815,15 @@ export default function VoicePage() {
           </button>
 
           {/* Label + voice selector */}
+          <div className="flex flex-col items-center gap-1">
           <div className="flex items-center gap-3 relative">
             <h1
               className="text-2xl font-semibold tracking-[0.4em]"
               style={{
                 color: '#00D4FF',
                 fontFamily: 'var(--font-sora)',
-                textShadow: '0 0 20px rgba(0,212,255,0.3)',
+                textShadow: '0 0 24px rgba(0,212,255,0.45)',
+                paddingLeft: '0.4em', /* optically recenters letter-spaced caps */
               }}
             >
               JARVIS
@@ -709,6 +878,8 @@ export default function VoicePage() {
                 ))}
               </div>
             )}
+          </div>
+          <div className={s.jarvisSub}>Autonomous Orchestrator</div>
           </div>
 
           {/* Speed slider */}
@@ -850,64 +1021,159 @@ export default function VoicePage() {
             </div>
           )}
         </div>
+  );
 
-        {/* Right panel — North Star + Focus + Awaiting Input */}
-        <div className="hidden lg:flex w-80 xl:w-96 flex-col px-5 pt-5 pb-12 gap-4 overflow-y-auto" style={{ maxHeight: '100%' }}>
-          {/* Model indicator */}
-          <div className="flex justify-center">
-            <div className={s.hudModelBadge}>
-              <span className={s.hudModelDot} />
-              Haiku + Opus
-            </div>
-          </div>
-
-          {/* North Star */}
+  // NORTH STAR
+  const northStarPanel = (
           <div className={s.hudPanelBracketed}>
             <div className={s.hudPanelHeader}>NORTH STAR</div>
             <p className={s.hudPanelText}>
               {statusData?.northStar || 'Loading...'}
             </p>
           </div>
+  );
 
-          <div className={s.hudAccentLine} />
-
-          {/* Today's Focus */}
+  // TODAY'S FOCUS — daily_focus with staleness chip; the focus text itself and
+  // every completed-today row expand in place (B clicked it expecting exactly that).
+  const focusPanel = (
           <div className={s.hudPanelBracketed}>
-            <div className={s.hudPanelHeader}>TODAY&apos;S FOCUS</div>
-            <p className={s.hudPanelText}>
-              {statusData?.focus || 'Loading...'}
-            </p>
+            {panelHeader("TODAY'S FOCUS", '/strategy', statusData ? ageChip(statusData.focusAgeHours, 36) : undefined)}
+            {statusData ? (
+              expandableText('focus-text', statusData.focus, {
+                clamp: 'clamp4',
+                threshold: 150,
+                className: s.hudPanelText,
+              })
+            ) : (
+              <p className={s.hudPanelText}>Loading...</p>
+            )}
+            {statusData && statusData.focusAgeHours !== null && statusData.focusAgeHours > 36 && (
+              <p style={{ fontSize: '10px', color: '#FFB800', marginTop: '6px', letterSpacing: '0.05em' }}>
+                ⚠ focus not refreshed in {fmtAge(statusData.focusAgeHours)} — live work below
+              </p>
+            )}
+            {statusData && (
+              <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(0,212,255,0.1)' }}>
+                <div style={{ fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(224,240,255,0.35)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Completed today · {statusData.completedToday.count}
+                </div>
+                {statusData.completedToday.titles.length > 0 ? (
+                  statusData.completedToday.titles.map((t, i) => (
+                    <div key={i} style={{ marginBottom: '4px' }}>
+                      {expandableText(`done-${i}`, `✓ ${t}`, {
+                        clamp: 'clamp1',
+                        threshold: 40,
+                        style: { fontSize: '11px', color: 'rgba(224,240,255,0.8)', lineHeight: 1.5 },
+                      })}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ fontSize: '11px', color: 'rgba(224,240,255,0.4)' }}>nothing completed yet</div>
+                )}
+              </div>
+            )}
           </div>
+  );
 
-          <div className={s.hudAccentLine} />
-
-          {/* Awaiting Input — pending approvals / decisions */}
+  // AWAITING YOUR INPUT — LIVE sources: pending approvals + open decisions + open questions.
+  const awaitingPanel = (
           <div className={s.hudPanelBracketed}>
-            <div className={s.hudPanelHeader}>AWAITING YOUR INPUT</div>
-            {statusData?.pendingQuestions && statusData.pendingQuestions.length > 0 ? (
-              statusData.pendingQuestions.slice(0, 5).map((q, i) => {
+            {panelHeader('AWAITING YOUR INPUT', '/inbox')}
+            {statusData?.pendingItems && statusData.pendingItems.length > 0 ? (
+              statusData.pendingItems.slice(0, 6).map((q, i) => {
                 const key = `pending-${i}`;
                 const isExpanded = expandedPanelItem === key;
                 return (
-                  <p
+                  <div
                     key={i}
                     className={isExpanded ? s.hudPanelItemExpanded : s.hudPanelItem}
                     onClick={() => togglePanelItem(key)}
                     title="Click to expand"
                   >
-                    {q}
-                  </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                      <span className={isExpanded ? undefined : s.clamp2}>{q.title}</span>
+                      <span style={sourceChipStyle(q.source)}>
+                        {q.source === 'open-question' ? 'Q' : q.source === 'approval' ? 'APPROVAL' : 'DECISION'}
+                        {q.ageDays != null && q.ageDays > 0 ? ` ${q.ageDays}d` : ''}
+                      </span>
+                    </div>
+                    {isExpanded && q.detail && q.detail !== q.title && (
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: 'rgba(224,240,255,0.6)', lineHeight: 1.5 }}>
+                        {q.detail}
+                      </div>
+                    )}
+                  </div>
                 );
               })
-            ) : (
+            ) : statusData ? (
               <p className={s.hudPanelText}>No pending items</p>
+            ) : (
+              <p className={s.hudPanelText}>Loading...</p>
             )}
           </div>
+  );
+
+  return (
+    <div className={s.scene}>
+    <div className={s.hero}>
+      <div className={s.grid} />
+      <div className={s.vignette} />
+      <div className={s.scanline} />
+
+      <div className={`${s.hudCorner} ${s.hudCornerTL}`} />
+      <div className={`${s.hudCorner} ${s.hudCornerTR}`} />
+      <div className={`${s.hudCorner} ${s.hudCornerBL}`} />
+      <div className={`${s.hudCorner} ${s.hudCornerBR}`} />
+
+      <div className="relative z-10 flex flex-col lg:flex-row lg:h-full">
+        {/* Left column (lg+) — Money + Edge + Tasks + Fleet + Brain.
+            Internally scrollable; panels never shrink, so nothing clips. */}
+        <div className={`hidden lg:flex flex-col w-80 xl:w-96 shrink-0 ${s.hudColumn}`}>
+          <div className={s.hudTimestamp}>{hudTime}</div>
+          {moneyPanel}
+          <div className={s.hudAccentLine} />
+          {edgePanel}
+          <div className={s.hudAccentLine} />
+          {tasksPanel}
+          <div className={s.hudAccentLine} />
+          {fleetPanel}
+          {brainPanel}
         </div>
 
-        {/* Bottom HUD bar */}
+        {/* Center — the orb */}
+        {centerSection}
+
+        {/* Right column (lg+) — North Star + Focus + Awaiting Input */}
+        <div className={`hidden lg:flex flex-col w-80 xl:w-96 shrink-0 ${s.hudColumn}`}>
+          <div className="flex justify-center">
+            <div className={s.hudModelBadge}>
+              <span className={s.hudModelDot} />
+              Haiku + Opus
+            </div>
+          </div>
+          {northStarPanel}
+          <div className={s.hudAccentLine} />
+          {focusPanel}
+          <div className={s.hudAccentLine} />
+          {awaitingPanel}
+        </div>
+
+        {/* < lg — every panel stacked under the orb (they used to be invisible
+            on the phone). The page scrolls; nothing is hidden or clipped. */}
+        <div className={`flex flex-col lg:hidden ${s.hudStack}`}>
+          {moneyPanel}
+          {focusPanel}
+          {awaitingPanel}
+          {tasksPanel}
+          {edgePanel}
+          {fleetPanel}
+          {brainPanel}
+          {northStarPanel}
+        </div>
+
+        {/* Bottom HUD bar (lg+ only — the mobile bottom-nav owns that edge) */}
         <div className={s.hudBottomBar}>
-          <span>JARVIS COCKPIT v2.1</span>
+          <span>JARVIS COCKPIT v2.2</span>
           <span className={s.hudBottomSep}>|</span>
           <span>MODELS: HAIKU (FAST) + OPUS (DEEP)</span>
           <span className={s.hudBottomSep}>|</span>

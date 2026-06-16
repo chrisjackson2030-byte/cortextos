@@ -23,12 +23,10 @@ import {
   IconChartCandle,
   IconChartArea,
   IconReportMoney,
-  IconTrendingUp,
-  IconChecklist,
-  IconBulb,
-  IconAffiliate,
-  IconHistory,
+  IconInbox,
   IconRadar2,
+  IconCoin,
+  IconBuildingBank,
 } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -42,42 +40,42 @@ interface NavItem {
   section?: string;
 }
 
+// 2026-06-10 overhaul: 23 items → 14-ish. Jarvis (the cockpit) promoted to top,
+// Inbox replaces Decisions/New Ideas/Connections/Throwback, money pages get
+// their own section, Futures/Crypto killed (superseded by Edge Engine).
 const navItems: NavItem[] = [
   // Core
-  { label: 'Overview', href: '/', icon: IconLayoutDashboard, section: 'core' },
-  { label: 'Agents', href: '/agents', icon: IconRobot, section: 'core' },
-  { label: 'Tasks', href: '/tasks', icon: IconListCheck, section: 'core' },
-  { label: 'Activity', href: '/activity', icon: IconActivity, section: 'core' },
-  { label: 'Decisions & Ideas', href: '/decisions', icon: IconChecklist, section: 'core' },
-
   { label: 'Jarvis', href: '/voice', icon: IconMicrophone, section: 'core' },
+  { label: 'Overview', href: '/', icon: IconLayoutDashboard, section: 'core' },
+  { label: 'Inbox', href: '/inbox', icon: IconInbox, section: 'core' },
+  { label: 'Tasks', href: '/tasks', icon: IconListCheck, section: 'core' },
+  { label: 'Agents', href: '/agents', icon: IconRobot, section: 'core' },
+  { label: 'Activity', href: '/activity', icon: IconActivity, section: 'core' },
+  { label: 'Approvals', href: '/approvals', icon: IconShieldCheck, section: 'core' },
+  { label: 'Comms', href: '/comms', icon: IconMessages, section: 'core' },
 
-  // Operations
-  { label: 'Prediction Markets', href: '/predictions', icon: IconChartCandle, section: 'ops' },
-  { label: 'Options', href: '/options', icon: IconChartArea, section: 'ops' },
-  { label: 'Advisor', href: '/advisor', icon: IconReportMoney, section: 'ops' },
-  { label: 'Futures / Crypto', href: '/futures', icon: IconTrendingUp, section: 'ops' },
-  { label: 'Edge Engine', href: '/edge-engine', icon: IconRadar2, section: 'ops' },
-  { label: 'Comms', href: '/comms', icon: IconMessages, section: 'ops' },
-  { label: 'Approvals', href: '/approvals', icon: IconShieldCheck, section: 'ops' },
-  { label: 'Workflows', href: '/workflows', icon: IconClock, section: 'ops' },
-  { label: 'Strategy', href: '/strategy', icon: IconTarget, section: 'ops' },
-  { label: 'Analytics', href: '/analytics', icon: IconChartDots3, section: 'ops' },
+  // Money
+  { label: 'Revenue', href: '/revenue', icon: IconCoin, section: 'money' },
+  { label: 'Prop Firm', href: '/prop-firm', icon: IconBuildingBank, section: 'money' },
+  { label: 'Options', href: '/options', icon: IconChartArea, section: 'money' },
+  { label: 'Edge Engine', href: '/edge-engine', icon: IconRadar2, section: 'money' },
+  { label: 'Advisor', href: '/advisor', icon: IconReportMoney, section: 'money' },
+  { label: 'Predictions (frozen)', href: '/predictions', icon: IconChartCandle, section: 'money' },
 
-  // Intelligence
-  { label: 'New Ideas', href: '/new-ideas', icon: IconBulb, section: 'intel' },
-  { label: 'Connections', href: '/connections', icon: IconAffiliate, section: 'intel' },
-  { label: 'Throwback', href: '/throwback', icon: IconHistory, section: 'intel' },
-  { label: 'Knowledge Base', href: '/knowledge-base', icon: IconBook2, section: 'intel' },
-  { label: 'Wiki', href: '/wiki', icon: IconNotes, section: 'intel' },
-  { label: 'Experiments', href: '/experiments', icon: IconFlask, section: 'intel' },
-  { label: 'Skills', href: '/skills', icon: IconPuzzle, section: 'intel' },
+  // System
+  { label: 'Workflows', href: '/workflows', icon: IconClock, section: 'system' },
+  { label: 'Analytics', href: '/analytics', icon: IconChartDots3, section: 'system' },
+  { label: 'Strategy', href: '/strategy', icon: IconTarget, section: 'system' },
+  { label: 'Knowledge Base', href: '/knowledge-base', icon: IconBook2, section: 'system' },
+  { label: 'Wiki', href: '/wiki', icon: IconNotes, section: 'system' },
+  { label: 'Experiments', href: '/experiments', icon: IconFlask, section: 'system' },
+  { label: 'Skills', href: '/skills', icon: IconPuzzle, section: 'system' },
 ];
 
 const sectionLabels: Record<string, string> = {
   core: '',
-  ops: 'Operations',
-  intel: 'Intelligence',
+  money: 'Money',
+  system: 'System',
 };
 
 interface SidebarProps {
@@ -115,7 +113,7 @@ export function Sidebar({
   }
 
   // Group items by section
-  const sections = ['core', 'ops', 'intel'];
+  const sections = ['core', 'money', 'system'];
 
   return (
     <aside className="flex h-screen w-56 shrink-0 flex-col border-r bg-card/50">

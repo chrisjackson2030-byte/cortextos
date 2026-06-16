@@ -69,9 +69,8 @@ const NAV: { label: string; href: string }[] = [
   { label: 'Tasks', href: '/tasks' },
   { label: 'Approvals', href: '/approvals' },
   { label: 'Strategy', href: '/strategy' },
-  { label: 'New Ideas', href: '/new-ideas' },
-  { label: 'Connections', href: '/connections' },
-  { label: 'Throwback', href: '/throwback' },
+  { label: 'Inbox', href: '/inbox' },
+  { label: 'Edge Engine', href: '/edge-engine' },
 ];
 
 function Card({ title, accent, children }: { title: string; accent?: string; children: React.ReactNode }) {

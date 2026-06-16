@@ -4,28 +4,25 @@ import { getPendingCount } from '@/lib/data/approvals';
 import { getTasks, getTasksCompletedToday } from '@/lib/data/tasks';
 import { getGoals } from '@/lib/data/goals';
 import { getHealthSummary, getAllHeartbeats } from '@/lib/data/heartbeats';
-import { getRecentEvents, getMilestones, getMetricSparklines, getActivityHeatmap } from '@/lib/data/events';
+import { getRecentEvents } from '@/lib/data/events';
 import { discoverAgents } from '@/lib/data/agents';
-import { getColdProjects, getThrowback, getLeftOff, getBuildTracker } from '@/lib/data/command-center';
 
-import { BuildTracker } from '@/components/overview/build-tracker';
-import { JarvisBuildPanel } from '@/components/overview/jarvis-build-panel';
-import { DebriefMemory } from '@/components/overview/debrief-memory';
 import { TradingSnapshot } from '@/components/overview/trading-snapshot';
 import { ActionRequired } from '@/components/overview/action-required';
-import { CurrentFocus } from '@/components/overview/current-focus';
-import { TodaysProgress } from '@/components/overview/todays-progress';
 import { LiveActivity } from '@/components/overview/live-activity';
-import { SystemHealth } from '@/components/overview/system-health';
-import { MetricCards } from '@/components/overview/metric-cards';
 import { AgentStatusGrid } from '@/components/overview/agent-status-grid';
 import { ActiveWork } from '@/components/overview/active-work';
-import { AgentTaskBreakdown } from '@/components/overview/agent-task-breakdown';
 import { AutoRefresh } from '@/components/overview/auto-refresh';
 import { DailyFocusBanner } from '@/components/overview/daily-focus-banner';
-import { ActivityHeatmap } from '@/components/overview/activity-heatmap';
 
 export const dynamic = 'force-dynamic';
+
+// 2026-06-10 overhaul: slimmed from 13 stacked panels to ~5. The screen answers
+// three questions: Does anything need me? Is money OK? Is the fleet OK?
+// Cut: BuildTracker + JarvisBuildPanel (anchored to the superseded Jun-3 plan),
+// DebriefMemory, ActivityHeatmap, AgentTaskBreakdown, CurrentFocus,
+// TodaysProgress, MetricCards sparklines (headline numbers fold into the thin
+// strip below the header), SystemHealth (AgentStatusGrid covers the fleet).
 
 export default async function OverviewPage({
   searchParams,
@@ -47,11 +44,8 @@ export default async function OverviewPage({
     healthSummary,
     completedToday,
     recentEvents,
-    milestones,
     agents,
     heartbeatsList,
-    sparklines,
-    heatmapData,
   ] = await Promise.all([
     Promise.resolve(getPendingCount(org || undefined)),
     Promise.resolve(getTasks({ status: 'blocked', org: org || undefined })),
@@ -60,18 +54,9 @@ export default async function OverviewPage({
     getHealthSummary(org || undefined),
     Promise.resolve(getTasksCompletedToday(org || undefined)),
     Promise.resolve(getRecentEvents(20, org || undefined)),
-    Promise.resolve(getMilestones(org || undefined)),
     discoverAgents(org || undefined),
     getAllHeartbeats(),
-    Promise.resolve(getMetricSparklines(org || undefined)),
-    Promise.resolve(getActivityHeatmap(org || undefined)),
   ]);
-
-  // Command-center "second brain" data — surfaced from the shared registries.
-  const coldProjects = getColdProjects();
-  const throwback = getThrowback();
-  const leftOff = getLeftOff();
-  const buildTracker = getBuildTracker();
 
   // Convert heartbeats array to lookup map
   const heartbeats: Record<string, typeof heartbeatsList[number]> = {};
@@ -91,6 +76,21 @@ export default async function OverviewPage({
   const pendingTasks = allTasks.filter(t => t.status === 'pending').length;
   const humanTasks = allTasks.filter(t => t.assignee === 'human' && t.status !== 'completed').length;
   const totalActions = pendingCount + blockedTasks.length + staleAgentCount + humanTasks;
+
+  // Headline numbers as a thin strip (replaces the MetricCards sparkline grid)
+  const strip: { label: string; value: string; href: string; alert?: boolean }[] = [
+    {
+      label: 'agents online',
+      value: `${healthSummary.healthy}/${healthSummary.healthy + healthSummary.stale + healthSummary.down}`,
+      href: '/agents',
+      alert: staleAgentCount > 0,
+    },
+    { label: 'done today', value: String(completedToday.length), href: '/tasks?status=completed' },
+    { label: 'in progress', value: String(inProgressTasks), href: '/tasks?status=in_progress' },
+    { label: 'pending', value: String(pendingTasks), href: '/tasks?status=pending' },
+    { label: 'approvals', value: String(pendingCount), href: '/approvals', alert: pendingCount > 0 },
+    { label: 'blocked', value: String(blockedTasks.length), href: '/tasks?status=blocked', alert: blockedTasks.length > 0 },
+  ];
 
   return (
     <div className="space-y-6">
@@ -127,30 +127,31 @@ export default async function OverviewPage({
         )}
       </div>
 
-      {/* Jarvis build-roadmap ribbon — where the system itself is in development */}
-      <BuildTracker data={buildTracker} />
+      {/* Headline numbers — thin strip */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border bg-card/50 px-4 py-2 font-mono text-xs">
+        {strip.map((m) => (
+          <Link key={m.label} href={m.href} className="flex items-baseline gap-1.5 hover:text-foreground transition-colors">
+            <span className={`text-base font-bold tabular-nums ${m.alert ? 'text-warning' : 'text-foreground'}`}>
+              {m.value}
+            </span>
+            <span className="text-muted-foreground uppercase tracking-wider text-[10px]">{m.label}</span>
+          </Link>
+        ))}
+      </div>
 
-      {/* Jarvis Build accountability panel — self-construction loop status, countdown,
-          issues, dormancy flag. Read-only from state/loop-state.json + plan + logs. */}
-      <JarvisBuildPanel />
+      {/* Action Required — always visible, even when 0 ("all clear" state) */}
+      <ActionRequired
+        pendingApprovals={pendingCount}
+        blockedTasks={blockedTasks.length}
+        staleAgents={staleAgentCount}
+        humanTasks={humanTasks}
+      />
 
-      {/* Daily Focus + Bottleneck */}
+      {/* Daily Focus + Bottleneck (TimeAgo chip makes staleness visible) */}
       <DailyFocusBanner
         dailyFocus={goalsData.daily_focus}
         dailyFocusSetAt={goalsData.daily_focus_set_at}
         bottleneck={goalsData.bottleneck}
-      />
-
-      {/* Metric Cards */}
-      <MetricCards
-        agentsOnline={healthSummary.healthy}
-        agentsTotal={healthSummary.healthy + healthSummary.stale + healthSummary.down}
-        tasksCompleted={completedToday.length}
-        tasksInProgress={inProgressTasks}
-        tasksPending={pendingTasks}
-        pendingApprovals={pendingCount}
-        blockedTasks={blockedTasks.length}
-        sparklines={sparklines}
       />
 
       {/* Profit Pulse — live trading (prediction markets + Alpaca options w/ live account) */}
@@ -162,48 +163,15 @@ export default async function OverviewPage({
         recentlyCompleted={completedToday}
       />
 
-      {/* Action Required - only show if there are actions */}
-      {totalActions > 0 && (
-        <ActionRequired
-          pendingApprovals={pendingCount}
-          blockedTasks={blockedTasks.length}
-          staleAgents={staleAgentCount}
-          humanTasks={humanTasks}
-        />
-      )}
-
-      {/* Agent Status Grid + Live Activity + Heatmap */}
+      {/* Agent Status Grid + Live Activity */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-1 space-y-4">
+        <div className="xl:col-span-1">
           <AgentStatusGrid agents={visibleAgents} heartbeats={heartbeats} />
-          <DebriefMemory leftOff={leftOff} coldProjects={coldProjects} throwback={throwback} />
-          <AgentTaskBreakdown tasks={allTasks} />
-          <ActivityHeatmap data={heatmapData} />
         </div>
         <div className="xl:col-span-2">
           <LiveActivity initialEvents={recentEvents} />
         </div>
       </div>
-
-      {/* Current Focus + Today's Progress */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3">
-          <CurrentFocus
-            org={org || 'default'}
-            bottleneck={goalsData.bottleneck}
-            goals={goalsData.goals}
-          />
-        </div>
-        <div className="lg:col-span-2">
-          <TodaysProgress
-            completedTasks={completedToday}
-            milestones={milestones}
-          />
-        </div>
-      </div>
-
-      {/* System Health */}
-      <SystemHealth summary={healthSummary} />
     </div>
   );
 }

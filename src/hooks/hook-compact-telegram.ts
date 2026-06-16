@@ -106,33 +106,23 @@ async function armHaltForCompaction(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  // Arm halt first (synchronous-in-async, fast) so it lands before Telegram
+  // Arm halt first (synchronous-in-async, fast) so it lands before logging
   await armHaltForCompaction();
 
-  const env = loadEnv();
-
-  if (!env.botToken || !env.chatId) return;
-
-  const agentName = env.agentName || 'agent';
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-
+  // 2026-06-10 B noise directive (+ standing rule feedback_compaction_notifications:
+  // "compaction/restart -> disk only, never Telegram"). Compactions were paging B
+  // 6+ times/night. Log to disk instead; the KILL_SWITCH arming above is unchanged.
   try {
-    const url = `https://api.telegram.org/bot${env.botToken}/sendMessage`;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: env.chatId,
-        text: `[${agentName}] Context compacting... resuming shortly`,
-      }),
-      signal: controller.signal,
-    });
+    const env = loadEnv();
+    const agentName = env.agentName || 'agent';
+    const { appendFileSync } = await import('fs');
+    const logPath = '/Users/chrisjackson/.openclaw/workspace/discordbot/logs/compaction-events.log';
+    appendFileSync(
+      logPath,
+      `${new Date().toISOString()} [${agentName}] context compaction started (telegram suppressed — disk-only per feedback_compaction_notifications)\n`,
+    );
   } catch {
     // Never fail — compaction must not be blocked
-  } finally {
-    clearTimeout(timer);
   }
 }
 
