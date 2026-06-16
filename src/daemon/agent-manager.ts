@@ -30,6 +30,12 @@ export class AgentManager {
   // Tracks agents that received a start request while still stopping.
   // stopAgent() honors these after cleanup completes so restart-all is race-free.
   private pendingRestarts: Set<string> = new Set();
+  // Guards the async gap between the this.agents.has() check and this.agents.set()
+  // in startAgent(). Prevents a second concurrent startAgent() call from passing
+  // the has() check before the first call sets the registry entry (BUG-011 hardening).
+  // While this window is currently synchronous (no await between check and set),
+  // this guard documents the invariant and prevents future regressions.
+  private inProgressStarts: Set<string> = new Set();
   private instanceId: string;
   private ctxRoot: string;
   private frameworkRoot: string;
@@ -252,7 +258,7 @@ export class AgentManager {
   }
 
   async startAgent(name: string, agentDir: string, config?: AgentConfig, org?: string): Promise<void> {
-    if (this.agents.has(name)) {
+    if (this.agents.has(name) || this.inProgressStarts.has(name)) {
       // BUG-031: this branch was the workaround for the BUG-011 PTY race
       // (restart-all could send stop+start simultaneously, and the new
       // start would arrive while the old stop's PTY exit was still in
@@ -282,6 +288,13 @@ export class AgentManager {
       return;
     }
 
+    // BUG-011 hardening: mark this start as in-progress so a concurrent
+    // startAgent() call (e.g. IPC request racing against a pendingRestart drain)
+    // hits the inProgressStarts guard above and queues instead of racing.
+    // Cleared immediately after this.agents.set() — at that point the registry
+    // entry is the authoritative guard and inProgressStarts is redundant.
+    this.inProgressStarts.add(name);
+
     // BUG-043 fix: resolve the agent's true org instead of using `this.org`.
     const resolvedOrg = this.resolveAgentOrg(name, org);
 
@@ -292,6 +305,7 @@ export class AgentManager {
         agentDir = discovered;
       } else {
         console.error(`[agent-manager] Agent directory not found for ${name}: tried ${discovered}`);
+        this.inProgressStarts.delete(name);
         return;
       }
     }
@@ -416,6 +430,10 @@ export class AgentManager {
     }
 
     this.agents.set(name, { process: agentProcess, checker });
+    // BUG-011 hardening: registry entry is set — clear in-progress guard.
+    // Any concurrent startAgent() that was blocked by inProgressStarts will
+    // now see this.agents.has(name) === true and queue via pendingRestarts.
+    this.inProgressStarts.delete(name);
 
     // Start agent
     await agentProcess.start();
@@ -1174,9 +1192,21 @@ export class AgentManager {
       }
     };
 
+    // WORKSTREAM 1 — busy/idle gate. Consulted before each cron fire so a
+    // due cron DEFERS (re-checks next tick) instead of serializing its prompt
+    // into the live orchestrator conversation while the agent is mid-turn.
+    // This is what stops ~20 crons from collapsing into one session. Reads the
+    // same Stop-hook flag fast-checker uses; capped at MAX_DEFERRALS so a long
+    // turn can't starve a time-sensitive cron.
+    const shouldDefer = (_cron: CronDefinition): boolean => {
+      const e = this.agents.get(agentName);
+      return e?.process.isBusy() ?? false;
+    };
+
     const scheduler = new CronScheduler({
       agentName,
       onFire,
+      shouldDefer,
       logger: (msg) => console.log(`[daemon] ${msg}`),
     });
 

@@ -223,3 +223,77 @@ describe('TelegramPoller — offset-after-handler', () => {
     }
   });
 });
+
+// WS6.5 item 3: transient poll errors must back off (capped exponential) and
+// be log-deduped so a sustained network outage cannot flood daemon.err.log
+// (root cause of the 95k+ "fetch failed" lines).
+describe('TelegramPoller — transient-error backoff + log dedup (WS6.5 item 3)', () => {
+  let stateDir: string;
+
+  beforeEach(() => {
+    stateDir = mkdtempSync(join(tmpdir(), 'cortextos-poller-backoff-'));
+  });
+
+  afterEach(() => {
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it('caps retry rate via backoff and logs an identical error only once', async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const getUpdates = vi.fn(async () => {
+      throw new Error('Telegram API request failed: TypeError: fetch failed');
+    });
+    const api = { getUpdates } as unknown as TelegramAPI;
+    const poller = new TelegramPoller(api, stateDir, 1000);
+
+    // Fire-and-forget the loop, then run 5 minutes of virtual time.
+    poller.start();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    poller.stop();
+    // Let the final (up to 30s) backoff sleep resolve so the loop exits.
+    await vi.advanceTimersByTimeAsync(35_000);
+
+    // Backoff: without it, a 1s interval would attempt ~300 polls in 5 min.
+    // With the capped exponential backoff it is an order of magnitude fewer.
+    expect(getUpdates.mock.calls.length).toBeLessThan(50);
+
+    // Dedup: the identical "fetch failed" error is logged exactly once
+    // (first occurrence), not once per attempt.
+    const firstOccurrenceLogs = errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('Poll error:'),
+    ).length;
+    expect(firstOccurrenceLogs).toBe(1);
+
+    errSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('logs recovery and resets after a successful poll following failures', async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let attempts = 0;
+    const getUpdates = vi.fn(async (_offset: number) => {
+      attempts++;
+      if (attempts <= 2) throw new Error('Telegram API request failed: TypeError: fetch failed');
+      return { result: [] }; // recovers on the 3rd attempt
+    });
+    const api = { getUpdates } as unknown as TelegramAPI;
+    const poller = new TelegramPoller(api, stateDir, 1000);
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(20_000);
+    poller.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const recovered = errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('Recovered after'),
+    ).length;
+    expect(recovered).toBe(1);
+
+    errSpy.mockRestore();
+    vi.useRealTimers();
+  });
+});

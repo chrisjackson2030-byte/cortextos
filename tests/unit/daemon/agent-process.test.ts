@@ -416,3 +416,76 @@ describe('AgentProcess — CrashLoopPauser (instar-inspired sliding window)', ()
     expect(ap.getStatus().status).not.toBe('halted');
   });
 });
+
+describe('AgentProcess — isBusy() busy/idle gate (WORKSTREAM 1)', () => {
+  const IDLE_FLAG = '/tmp/test-ctx/state/alice/last_idle.flag';
+
+  it('returns false before any inject (lastInjectedAt === 0)', async () => {
+    const ap = new AgentProcess('alice', mockEnv, {});
+    await ap.start();
+    expect(ap.isBusy()).toBe(false);
+  });
+
+  it('returns true after an inject with no idle flag yet (hook not fired)', async () => {
+    const ap = new AgentProcess('alice', mockEnv, {});
+    await ap.start();
+    fsMocks.existsSync.mockImplementation((p: string) => p !== IDLE_FLAG);
+    expect(ap.injectMessage('do work')).toBe(true);
+    expect(ap.isBusy()).toBe(true);
+  });
+
+  it('returns false when the idle flag is newer than the last inject', async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+    const ap = new AgentProcess('alice', mockEnv, {});
+    await ap.start();
+    expect(ap.injectMessage('do work')).toBe(true); // inject at t0
+
+    // Stop hook fires 1s later → idle flag (in SECONDS) is newer than inject.
+    vi.setSystemTime(t0 + 1000);
+    fsMocks.existsSync.mockImplementation((p: string) => p === IDLE_FLAG);
+    fsMocks.readFileSync.mockReturnValue(String(Math.floor((t0 + 1000) / 1000)));
+    expect(ap.isBusy()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('returns true when the last inject is newer than the idle flag', async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+    const ap = new AgentProcess('alice', mockEnv, {});
+    await ap.start();
+    // Idle flag is OLD (10s before the inject).
+    fsMocks.existsSync.mockImplementation((p: string) => p === IDLE_FLAG);
+    fsMocks.readFileSync.mockReturnValue(String(Math.floor((t0 - 10_000) / 1000)));
+    expect(ap.injectMessage('do work')).toBe(true); // inject at t0 (newer)
+    expect(ap.isBusy()).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('fails OPEN (not busy) when the idle flag is unreadable', async () => {
+    const ap = new AgentProcess('alice', mockEnv, {});
+    await ap.start();
+    fsMocks.existsSync.mockImplementation((p: string) => p === IDLE_FLAG);
+    fsMocks.readFileSync.mockImplementation(() => { throw new Error('EACCES'); });
+    expect(ap.injectMessage('do work')).toBe(true);
+    expect(ap.isBusy()).toBe(false);
+  });
+
+  it('treats a stale inject (older than staleMs) as idle', async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+    const ap = new AgentProcess('alice', mockEnv, {});
+    await ap.start();
+    fsMocks.existsSync.mockImplementation((p: string) => p !== IDLE_FLAG);
+    expect(ap.injectMessage('do work')).toBe(true);
+    expect(ap.isBusy()).toBe(true); // fresh inject, no flag → busy
+
+    // 11 minutes later the inject is stale → assume idle even with no Stop.
+    vi.setSystemTime(t0 + 11 * 60 * 1000);
+    expect(ap.isBusy()).toBe(false);
+    vi.useRealTimers();
+  });
+});

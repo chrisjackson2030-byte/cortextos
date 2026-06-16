@@ -138,6 +138,8 @@ interface ScheduledCron {
   changeKey: string;
   /** True while onFire (+ retries) is executing — prevents re-entry on the next tick. */
   firing?: boolean;
+  /** Consecutive busy-gate deferrals for this slot (WORKSTREAM 1). Reset on real fire. */
+  deferCount?: number;
 }
 
 function changeKeyFor(c: CronDefinition): string {
@@ -161,6 +163,38 @@ function computeNextFireAt(cron: CronDefinition, referenceMs: number): number {
   // Try as a cron expression
   const next = nextFireFromCron(cron.schedule, referenceMs);
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Deferral sentinel (WORKSTREAM 1 — busy/idle gate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown by an onFire callback to signal "the agent is busy mid-turn — do NOT
+ * inject now, re-check on the next tick." Unlike a normal error this does NOT
+ * count as a dispatch failure: no retry backoff, no execution-log `failed`
+ * row, and nextFireAt is left UNCHANGED so the cron stays due and re-fires the
+ * moment the agent goes idle.
+ *
+ * This is what stops ~20 crons from serializing into the one orchestrator
+ * conversation: when the agent is working, every due cron simply waits its
+ * turn rather than queueing prompts into the live session.
+ *
+ * A maxDeferrals cap (see tick) prevents a perpetually-busy agent from starving
+ * a cron forever — after the cap we force-fire so time-sensitive crons still
+ * land eventually.
+ */
+export class DeferFireError extends Error {
+  readonly isDeferral = true as const;
+  constructor(message = 'agent busy — cron fire deferred') {
+    super(message);
+    this.name = 'DeferFireError';
+  }
+}
+
+function isDeferral(err: unknown): err is DeferFireError {
+  return err instanceof DeferFireError ||
+    (typeof err === 'object' && err !== null && (err as { isDeferral?: boolean }).isDeferral === true);
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +224,9 @@ async function fireWithRetry(
       });
       return true;
     } catch (err) {
+      // Busy-gate deferral: not a failure. Bubble straight up to tick() so it
+      // can leave nextFireAt unchanged and re-check next tick. No retry, no log.
+      if (isDeferral(err)) throw err;
       const errMsg = err instanceof Error ? err.message : String(err);
       const duration_ms = Date.now() - start;
       if (attempt < RETRY_DELAYS_MS.length) {
@@ -238,12 +275,29 @@ export interface CronSchedulerOptions {
   agentName: string;
   onFire: (cron: CronDefinition) => Promise<void> | void;
   logger?: (msg: string) => void;
+  /**
+   * WORKSTREAM 1 busy/idle gate. Consulted BEFORE each fire. Return true to
+   * DEFER (agent is mid-turn) — the cron stays due and re-checks next tick
+   * instead of serializing its prompt into the live conversation. Optional;
+   * when absent the scheduler always fires (legacy behavior). Deferrals are
+   * capped (see MAX_DEFERRALS) so a perpetually-busy agent can't starve a cron.
+   */
+  shouldDefer?: (cron: CronDefinition) => boolean;
 }
 
 export class CronScheduler {
   private readonly agentName: string;
   private readonly onFire: (cron: CronDefinition) => Promise<void> | void;
   private readonly logger: (msg: string) => void;
+  private readonly shouldDefer?: (cron: CronDefinition) => boolean;
+
+  /**
+   * WORKSTREAM 1: max consecutive busy-gate deferrals before a cron force-fires
+   * anyway. At a 30s tick this is ~5 min of "agent busy" before we stop waiting
+   * and inject, so a long-running turn can't silently starve time-sensitive
+   * crons (heartbeat, watchdogs) forever.
+   */
+  static readonly MAX_DEFERRALS = 10;
 
   /** In-memory schedule, keyed by cron name. */
   private scheduled: Map<string, ScheduledCron> = new Map();
@@ -268,9 +322,10 @@ export class CronScheduler {
   static readonly TICK_INTERVAL_MS = 30_000;
 
   constructor(opts: CronSchedulerOptions) {
-    this.agentName = opts.agentName;
-    this.onFire    = opts.onFire;
-    this.logger    = opts.logger ?? ((msg: string) => process.stdout.write(msg + '\n'));
+    this.agentName  = opts.agentName;
+    this.onFire     = opts.onFire;
+    this.logger     = opts.logger ?? ((msg: string) => process.stdout.write(msg + '\n'));
+    this.shouldDefer = opts.shouldDefer;
   }
 
   // -------------------------------------------------------------------------
@@ -353,6 +408,13 @@ export class CronScheduler {
       // Malformed file / missing dir — fall back to crons.json only
     }
 
+    // WS6.5 catch-up stagger: when multiple crons are overdue at startup,
+    // distribute their catch-up fires across consecutive ticks (30s apart)
+    // instead of firing all of them in the first tick. This prevents the
+    // "catch-up storm" where a daemon restart after days of downtime causes
+    // N simultaneous cron fires overwhelming the orchestrator.
+    let catchupSlot = 0;
+
     for (const def of defs) {
       if (!def.enabled) {
         // Disabled — silently skip
@@ -406,13 +468,18 @@ export class CronScheduler {
       }
 
       // CATCH-UP POLICY: if nextFireAt is in the past (daemon was stopped),
-      // fire once immediately for the missed window, then recompute from now.
+      // fire once for the missed window, then recompute from now.
       // We do NOT flood-fire all missed windows — one catch-up is sufficient.
+      // WS6.5: stagger multiple overdue crons across consecutive ticks so they
+      // do not all inject into the agent in the same 30s window (catch-up storm).
+      // catchupSlot 0 → fires in tick 1 (now+0), slot 1 → tick 2 (now+30s), etc.
       if (nextFireAt <= now) {
         this.logger(
-          `[cron-scheduler] catch-up: cron "${def.name}" missed fire at ${new Date(nextFireAt).toISOString()} — scheduling immediate fire`
+          `[cron-scheduler] catch-up: cron "${def.name}" missed fire at ${new Date(nextFireAt).toISOString()}` +
+          (catchupSlot > 0 ? ` — staggered to slot ${catchupSlot} (+${catchupSlot * CronScheduler.TICK_INTERVAL_MS / 1000}s)` : ' — scheduling immediate fire')
         );
-        nextFireAt = now; // fire on the very next tick
+        nextFireAt = now + catchupSlot * CronScheduler.TICK_INTERVAL_MS;
+        catchupSlot++;
       }
 
       nextScheduled.set(def.name, { definition: def, nextFireAt, changeKey: key });
@@ -466,8 +533,43 @@ export class CronScheduler {
         continue;
       }
 
-      sc.firing = true;
       const cron = sc.definition;
+
+      // WORKSTREAM 1 — busy/idle gate. If the agent is mid-turn, DEFER rather
+      // than serialize this cron's prompt into the live conversation. The slot
+      // stays due (nextFireAt unchanged) and is re-checked next tick. Capped at
+      // MAX_DEFERRALS so a perpetually-busy agent can't starve the cron forever.
+      if (this.shouldDefer) {
+        const deferred = sc.deferCount ?? 0;
+        if (deferred < CronScheduler.MAX_DEFERRALS) {
+          let busy = false;
+          try {
+            busy = this.shouldDefer(cron);
+          } catch (err) {
+            // Fail OPEN: a broken gate must never block cron delivery.
+            this.logger(
+              `[cron-scheduler] shouldDefer threw for "${name}" — firing anyway: ` +
+              `${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+          if (busy) {
+            sc.deferCount = deferred + 1;
+            this.logger(
+              `[cron-scheduler] deferring cron "${name}" — agent busy ` +
+              `(deferral ${sc.deferCount}/${CronScheduler.MAX_DEFERRALS}); will re-check next tick`
+            );
+            continue; // leave nextFireAt + firing untouched; re-check next tick
+          }
+        } else {
+          this.logger(
+            `[cron-scheduler] cron "${name}" hit MAX_DEFERRALS (${CronScheduler.MAX_DEFERRALS}) — ` +
+            `force-firing despite busy agent to avoid starvation`
+          );
+        }
+      }
+      sc.deferCount = 0; // firing for real — reset the deferral counter
+
+      sc.firing = true;
       this.logger(`[cron-scheduler] firing cron "${name}" (was due ${new Date(sc.nextFireAt).toISOString()})`);
 
       // Persist last_fire_attempted_at to disk BEFORE awaiting the dispatch.

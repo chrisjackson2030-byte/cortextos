@@ -727,6 +727,37 @@ describe('CronScheduler', () => {
     expect(fired.some(c => c.name === 'fresh')).toBe(false);
   });
 
+  // WS6.5 item 2: daemon restart after days of downtime must NOT replay
+  // every missed window (the "catch-up storm"). Each overdue cron fires
+  // exactly ONCE (most-recent missed window only), and multiple overdue
+  // crons are staggered across consecutive ticks instead of all in tick 1.
+  it('caps catch-up to one fire per cron and staggers multiple overdue crons (no storm)', async () => {
+    // Three crons, each on a "1h" schedule, all last fired 3 DAYS ago.
+    // Without the cap this would replay ~72 windows per cron (216 fires).
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3_600_000).toISOString();
+    mockReadCrons.mockReturnValue([
+      makeCron({ name: 'alpha',   schedule: '1h', last_fired_at: threeDaysAgo, fire_count: 10 }),
+      makeCron({ name: 'beta',    schedule: '1h', last_fired_at: threeDaysAgo, fire_count: 10 }),
+      makeCron({ name: 'gamma',   schedule: '1h', last_fired_at: threeDaysAgo, fire_count: 10 }),
+    ]);
+
+    scheduler.start();
+
+    // Advance 5 minutes (10 ticks) — well past the 3-tick stagger window but
+    // far short of the 1h re-fire interval, so each cron can fire at most once.
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + TICK);
+
+    const counts = fired.reduce<Record<string, number>>((acc, c) => {
+      acc[c.name] = (acc[c.name] ?? 0) + 1;
+      return acc;
+    }, {});
+    // Exactly one catch-up fire per cron — NOT one-per-missed-hour.
+    expect(counts).toEqual({ alpha: 1, beta: 1, gamma: 1 });
+    expect(fired).toHaveLength(3);
+    // At least one cron was staggered to a later slot (not all in tick 1).
+    expect(logs.some(l => /staggered to slot/.test(l))).toBe(true);
+  });
+
   // -------------------------------------------------------------------------
   // stop() — clears interval, no further fires
   // -------------------------------------------------------------------------
@@ -793,5 +824,87 @@ describe('CronScheduler', () => {
     expect(names).toContain('a');
     expect(names).toContain('b');
     expect(names).not.toContain('c'); // disabled, not scheduled
+  });
+
+  // -------------------------------------------------------------------------
+  // WORKSTREAM 1 — busy/idle gate (shouldDefer)
+  // -------------------------------------------------------------------------
+
+  it('defers a due cron while the agent is busy, then fires once it goes idle', async () => {
+    let busy = true;
+    const localFired: CronDefinition[] = [];
+    const gated = new CronScheduler({
+      agentName: 'busy-agent',
+      onFire: (c) => { localFired.push(c); },
+      logger: (m) => { logs.push(m); },
+      shouldDefer: () => busy,
+    });
+    mockReadCrons.mockReturnValue([makeCron({ schedule: '1m' })]);
+    gated.start();
+
+    // Pass the fire window while busy — must NOT fire, must NOT persist a fire.
+    await vi.advanceTimersByTimeAsync(60_000 + TICK);
+    expect(localFired).toHaveLength(0);
+    expect(mockUpdateCron).not.toHaveBeenCalledWith(
+      'busy-agent', 'test-cron',
+      expect.objectContaining({ last_fired_at: expect.any(String) }),
+    );
+    expect(logs.some(l => l.includes('deferring cron') && l.includes('agent busy'))).toBe(true);
+
+    // Agent goes idle — next tick fires the still-due slot.
+    busy = false;
+    await vi.advanceTimersByTimeAsync(TICK);
+    expect(localFired).toHaveLength(1);
+    gated.stop();
+  });
+
+  it('force-fires after MAX_DEFERRALS even if the agent stays busy', async () => {
+    const localFired: CronDefinition[] = [];
+    const gated = new CronScheduler({
+      agentName: 'stuck-agent',
+      onFire: (c) => { localFired.push(c); },
+      logger: (m) => { logs.push(m); },
+      shouldDefer: () => true, // never idle
+    });
+    mockReadCrons.mockReturnValue([makeCron({ schedule: '1m' })]);
+    gated.start();
+
+    // Reach the fire window, then run enough ticks to exhaust the deferral cap.
+    await vi.advanceTimersByTimeAsync(60_000 + TICK * (CronScheduler.MAX_DEFERRALS + 2));
+    expect(localFired.length).toBeGreaterThanOrEqual(1);
+    expect(logs.some(l => l.includes('MAX_DEFERRALS') && l.includes('force-firing'))).toBe(true);
+    gated.stop();
+  });
+
+  it('fires normally (no defer) when shouldDefer returns false', async () => {
+    const localFired: CronDefinition[] = [];
+    const gated = new CronScheduler({
+      agentName: 'idle-agent',
+      onFire: (c) => { localFired.push(c); },
+      logger: (m) => { logs.push(m); },
+      shouldDefer: () => false,
+    });
+    mockReadCrons.mockReturnValue([makeCron({ schedule: '1m' })]);
+    gated.start();
+
+    await vi.advanceTimersByTimeAsync(60_000 + TICK);
+    expect(localFired).toHaveLength(1);
+    gated.stop();
+  });
+
+  it('fails OPEN — a throwing shouldDefer never blocks delivery', async () => {
+    const localFired: CronDefinition[] = [];
+    const gated = new CronScheduler({
+      agentName: 'broken-gate-agent',
+      onFire: (c) => { localFired.push(c); },
+      logger: (m) => { logs.push(m); },
+      shouldDefer: () => { throw new Error('gate boom'); },
+    });
+    mockReadCrons.mockReturnValue([makeCron({ schedule: '1m' })]);
+    gated.start();
+
+    await vi.advanceTimersByTimeAsync(60_000 + TICK);
+    expect(localFired).toHaveLength(1); // fired despite the throwing gate
+    gated.stop();
   });
 });

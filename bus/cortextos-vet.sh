@@ -75,9 +75,18 @@ elif [[ "$ECOSYSTEM" == "npm" ]]; then
     log "Would run: npm audit for $PACKAGE"
   else
     TMPDIR_NPM=$(mktemp -d)
-    cd "$TMPDIR_NPM"
-    npm init -y --silent > /dev/null 2>&1
-    npm install "$PACKAGE${VERSION:+@$VERSION}" --package-lock-only --silent 2>/dev/null
+    # WS6.4 (rc=134 fix): under `set -euo pipefail` an UNGUARDED npm/node call here
+    # propagated a transient child crash (SIGABRT=134, or 127) as the script's own
+    # exit code, aborting the whole vet BEFORE the verdict block. The gate then saw
+    # a non-0/1 rc → INCONCLUSIVE → install proceeded UNVETTED. These setup calls
+    # (cd/init/install) only RESOLVE the dependency tree (no package code executes);
+    # the real verdict comes from `npm audit` + later layers. So a transient setup
+    # failure must DEGRADE (skip-to-audit), never kill the vet. Guard each one so
+    # the script always reaches a verdict.
+    cd "$TMPDIR_NPM" || { skip "Layer 1 (npm — workdir unavailable)"; TMPDIR_NPM=""; }
+    if [[ -n "$TMPDIR_NPM" ]]; then
+    npm init -y --silent > /dev/null 2>&1 || true
+    npm install "$PACKAGE${VERSION:+@$VERSION}" --package-lock-only --silent 2>/dev/null || true
     if npm audit --json > "$REPORT_DIR/npm-audit.json" 2>&1; then
       pass "Layer 1 (npm audit)"
     else
@@ -88,8 +97,9 @@ elif [[ "$ECOSYSTEM" == "npm" ]]; then
         fail "Layer 1 (npm audit) — $VULNS high/critical vulnerabilities"
       fi
     fi
-    cd - > /dev/null
-    rm -rf "$TMPDIR_NPM"
+    cd - > /dev/null 2>&1 || true
+    rm -rf "$TMPDIR_NPM" 2>/dev/null || true
+    fi
   fi
 fi
 

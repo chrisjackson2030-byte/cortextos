@@ -22,6 +22,19 @@ export class TelegramPoller {
   private callbackHandlers: CallbackHandler[] = [];
   private reactionHandlers: ReactionHandler[] = [];
   private pollInterval: number;
+
+  // WS6.5 item 3: transient-error backoff + log dedup. Without these, a
+  // network blip ("fetch failed") spams getUpdates every `pollInterval` and
+  // writes one full stack trace per failure — 95k+ lines in daemon.err.log.
+  private consecutiveFailures: number = 0;
+  private lastErrorMsg: string = '';
+  private suppressedErrorCount: number = 0;
+  /** Cap on the exponential backoff exponent (2^5 = 32x pollInterval). */
+  private static readonly MAX_BACKOFF_EXP = 5;
+  /** Absolute ceiling on the inter-poll sleep during sustained failure. */
+  private static readonly MAX_BACKOFF_MS = 30_000;
+  /** While an identical error repeats, log only the first + every Nth. */
+  private static readonly ERROR_LOG_EVERY = 30;
   /**
    * Why the poll loop last exited. Read by AgentManager's poller-supervisor
    * (#459 supervision-gap fix) to decide whether to restart:
@@ -89,8 +102,21 @@ export class TelegramPoller {
     this.running = true;
     this.lastExitReason = '';
     while (this.running) {
+      let sleepMs = this.pollInterval;
       try {
         await this.pollOnce();
+        // Successful poll (incl. an empty result) means connectivity is back.
+        // Emit a single recovery line if we had been failing, then reset.
+        if (this.consecutiveFailures > 0) {
+          const suppressed = this.suppressedErrorCount;
+          console.error(
+            `[telegram-poller] Recovered after ${this.consecutiveFailures} consecutive poll error(s)` +
+            (suppressed > 0 ? ` (${suppressed} duplicate error log(s) suppressed)` : ''),
+          );
+          this.consecutiveFailures = 0;
+          this.suppressedErrorCount = 0;
+          this.lastErrorMsg = '';
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // A 409 Conflict means another getUpdates connection holds the lock
@@ -102,10 +128,33 @@ export class TelegramPoller {
           this.running = false;
           return;
         }
-        // Other errors are transient — log and continue polling.
-        console.error('[telegram-poller] Poll error:', err);
+        // Other errors are transient. Log the FIRST occurrence of each
+        // distinct error, then suppress identical repeats (logging only
+        // every Nth) so a sustained network outage cannot flood the log.
+        this.consecutiveFailures++;
+        if (msg !== this.lastErrorMsg) {
+          if (this.suppressedErrorCount > 0) {
+            console.error(
+              `[telegram-poller] (suppressed ${this.suppressedErrorCount} repeat(s) of previous poll error)`,
+            );
+          }
+          console.error('[telegram-poller] Poll error:', err);
+          this.lastErrorMsg = msg;
+          this.suppressedErrorCount = 0;
+        } else {
+          this.suppressedErrorCount++;
+          if (this.suppressedErrorCount % TelegramPoller.ERROR_LOG_EVERY === 0) {
+            console.error(
+              `[telegram-poller] Poll error persisting (${this.suppressedErrorCount} consecutive identical): ${msg}`,
+            );
+          }
+        }
+        // Exponential backoff on sustained failure, capped, so we stop
+        // hammering the network + logs while Telegram is unreachable.
+        const exp = Math.min(this.consecutiveFailures - 1, TelegramPoller.MAX_BACKOFF_EXP);
+        sleepMs = Math.min(this.pollInterval * Math.pow(2, exp), TelegramPoller.MAX_BACKOFF_MS);
       }
-      await sleep(this.pollInterval);
+      await sleep(sleepMs);
     }
   }
 

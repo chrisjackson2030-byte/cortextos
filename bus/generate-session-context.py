@@ -462,10 +462,25 @@ def generate_context(agent_name: str, org: str) -> str:
         lines.append("")
 
     reflexes = get_reflexes(framework_root, agent_name, org)
-    if reflexes:
+    # WORKSTREAM 1 — FAN-OUT REFLEX is hardcoded (not file-driven) so it ALWAYS
+    # surfaces at decision time even if reflexes.md is missing/unreadable. This
+    # is the parallel-by-default orchestration rule from B's 2026-06-15 directive.
+    fanout_reflex = (
+        "- **FAN-OUT (hard rule, fire at DECISION time):** On ANY request with >=2 independent units, "
+        "or any task >~2 steps: FIRST enumerate the independent units, THEN spawn one worker per unit "
+        "IN A SINGLE TURN (background each with & to dispatch >=3 at once), THEN monitor + join. "
+        "RAIL: use the NATIVE `cortextos spawn-worker <name> --dir <abspath> --prompt \"...\" --parent jarvis` "
+        "(that is the rail `cortextos list-workers` and the bus measure; the harness Agent tool is parallel "
+        "but INVISIBLE to list-workers). --dir is REQUIRED. Prove fan-out with `cortextos list-workers` >=3 running. "
+        "NEVER do independent units inline in the orchestrator session. NEVER narrate 'parallel' "
+        "while dispatching serially - that is banned."
+    )
+    if reflexes or fanout_reflex:
         lines.append("## ⚡ Established Workflows / Reflexes (surface at DECISION time)")
         lines.append("_Saved B-feedback + workflows that were forgotten-at-decision before. Apply reflexively._")
-        lines.append(reflexes)
+        lines.append(fanout_reflex)
+        if reflexes:
+            lines.append(reflexes)
         lines.append("---")
         lines.append("")
 

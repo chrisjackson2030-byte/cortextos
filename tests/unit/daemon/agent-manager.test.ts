@@ -446,3 +446,81 @@ describe('AgentManager.reloadCrons - silent-success bug fix (iter 7)', () => {
     expect((am as any).cronSchedulers.has('ghost')).toBe(false);
   });
 });
+
+// WS6.5 BUG-011 reopen: prove the pendingRestarts safety net cannot
+// double-start an agent. The race (a second startAgent arriving while the
+// first is in flight / the agent is still registered) is contained by:
+//   (a) the guard at startAgent() L261 checking agents.has || inProgressStarts,
+//   (b) pendingRestarts being a Set (idempotent), honored only from
+//       stopAgent() AFTER the old process is fully stopped + de-registered.
+// These tests pin both invariants so a future edit that breaks them fails CI.
+describe('AgentManager - BUG-011 reopen: safety net cannot double-start', () => {
+  let testDir: string;
+  let ctxRoot: string;
+  let frameworkRoot: string;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'cortextos-am-bug011-'));
+    ctxRoot = join(testDir, 'instance');
+    frameworkRoot = join(testDir, 'framework');
+    mkdirSync(join(ctxRoot, 'config'), { recursive: true });
+    mkdirSync(join(frameworkRoot, 'orgs', 'acme', 'agents', 'alice'), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('re-entrant startAgent while agent already registered queues instead of spawning a second process', async () => {
+    const am = new AgentManager('test-instance', ctxRoot, frameworkRoot, 'acme');
+    // Simulate the agent already being live in the registry.
+    const liveEntry = { process: { stop: vi.fn(async () => {}) }, checker: { stop: vi.fn() } };
+    (am as any).agents.set('alice', liveEntry);
+
+    // A second startAgent arrives (the BUG-011 race). It MUST hit the guard
+    // and queue, not overwrite the registry entry / spawn a second process.
+    await am.startAgent('alice', join(frameworkRoot, 'orgs', 'acme', 'agents', 'alice'));
+
+    expect((am as any).agents.size).toBe(1);
+    // Registry entry is the SAME object — no second AgentProcess was constructed.
+    expect((am as any).agents.get('alice')).toBe(liveEntry);
+    // The duplicate start was queued for honoring after the next stop.
+    expect((am as any).pendingRestarts.has('alice')).toBe(true);
+  });
+
+  it('startAgent while a start is in flight (inProgressStarts) queues instead of double-starting', async () => {
+    const am = new AgentManager('test-instance', ctxRoot, frameworkRoot, 'acme');
+    // Simulate a start mid-flight: registry not yet set, but inProgressStarts marked.
+    (am as any).inProgressStarts.add('alice');
+
+    await am.startAgent('alice', join(frameworkRoot, 'orgs', 'acme', 'agents', 'alice'));
+
+    // Guard returned early — no registry entry was created by the racing call.
+    expect((am as any).agents.has('alice')).toBe(false);
+    expect((am as any).pendingRestarts.has('alice')).toBe(true);
+  });
+
+  it('stopAgent honors a queued restart exactly once and clears the pending flag', async () => {
+    const am = new AgentManager('test-instance', ctxRoot, frameworkRoot, 'acme');
+    const liveEntry = {
+      process: { stop: vi.fn(async () => {}) },
+      checker: { stop: vi.fn() },
+    };
+    (am as any).agents.set('alice', liveEntry);
+    (am as any).pendingRestarts.add('alice');
+
+    // Spy startAgent so we count the honor invocation without running the real
+    // spawn path; the production code path under test is stopAgent's honor block.
+    const startSpy = vi.spyOn(am, 'startAgent').mockResolvedValue();
+
+    await am.stopAgent('alice');
+    // Let the un-awaited honored restart microtask settle.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Honored exactly once — not twice (no double-start).
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(startSpy).toHaveBeenCalledWith('alice', '');
+    // Pending flag cleared so a later stop cannot re-honor the same restart.
+    expect((am as any).pendingRestarts.has('alice')).toBe(false);
+  });
+});

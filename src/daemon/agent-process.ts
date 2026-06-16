@@ -27,6 +27,8 @@ export class AgentProcess {
   private sessionTimer: ReturnType<typeof setTimeout> | null = null;
   private crashCount: number = 0;
   private maxCrashesPerDay: number = 10;
+  /** Epoch ms of the last PTY inject — feeds isBusy() (WORKSTREAM 1). */
+  private lastInjectedAt: number = 0;
   // CrashLoopPauser (instar-inspired): sliding-window crash detection.
   // Timestamps of recent crashes within the configured window. If the
   // window fills, the agent auto-pauses instead of retrying with backoff.
@@ -353,6 +355,7 @@ export class AgentProcess {
     }
 
     injectMessage((data) => this.pty?.write(data), content);
+    this.markInjected();
     return { ok: true };
   }
 
@@ -370,6 +373,59 @@ export class AgentProcess {
    */
   isBootstrapped(): boolean {
     return this.pty?.getOutputBuffer().isBootstrapped() ?? false;
+  }
+
+  /**
+   * Check whether the agent is mid-turn (actively processing) — WORKSTREAM 1.
+   *
+   * The Stop hook writes a Unix timestamp (seconds) to
+   * `state/<agent>/last_idle.flag` every time Claude finishes a turn.
+   * `markInjected()` records (ms) the last time the daemon pushed work into the
+   * PTY. The agent is BUSY when the most recent inject happened AFTER the most
+   * recent idle signal AND that inject was recent (within `staleMs`).
+   *
+   * This is the same hook-based signal fast-checker uses for the typing
+   * indicator (see fast-checker.ts isAgentActive) — reused here so the cron
+   * scheduler can DEFER a fire instead of serializing ~20 crons into the one
+   * orchestrator conversation. No PTY scraping: Claude Code writes spinner/
+   * cursor ANSI constantly even when idle, so buffer growth is not a reliable
+   * busy signal — only the hook flag is.
+   *
+   * Fail-OPEN: if we cannot read the flag we return false (not busy) so a
+   * missing/unreadable hook can never wedge cron delivery permanently.
+   *
+   * @param staleMs Injects older than this are ignored (agent assumed idle even
+   *                if no Stop fired — guards against a turn that crashed before
+   *                the Stop hook ran). Default 10 minutes, matching fast-checker.
+   */
+  isBusy(staleMs: number = 10 * 60 * 1000): boolean {
+    if (this.lastInjectedAt === 0) return false;
+
+    const now = Date.now();
+    if (now - this.lastInjectedAt > staleMs) return false;
+
+    const flagPath = join(this.env.ctxRoot, 'state', this.name, 'last_idle.flag');
+    try {
+      if (!existsSync(flagPath)) {
+        // Hook hasn't fired since the inject — still working.
+        return true;
+      }
+      const idleTs = parseInt(readFileSync(flagPath, 'utf-8').trim(), 10) * 1000;
+      if (isNaN(idleTs)) return false; // unparseable flag — fail open
+      // Busy when the last inject is newer than the last idle signal.
+      return this.lastInjectedAt > idleTs;
+    } catch {
+      return false; // can't read — fail open, never wedge delivery
+    }
+  }
+
+  /**
+   * Record that work was just injected into this agent's PTY (WORKSTREAM 1).
+   * Feeds isBusy(). Called by injectMessageDetailed() so every inject path
+   * (Telegram, agent message, cron) updates the busy clock.
+   */
+  private markInjected(): void {
+    this.lastInjectedAt = Date.now();
   }
 
   /**
