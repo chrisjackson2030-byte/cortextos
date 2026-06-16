@@ -10,6 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRAMEWORK_ROOT="$(dirname "$SCRIPT_DIR")"
 FALLBACK_SCRIPT="$FRAMEWORK_ROOT/scripts/codex-fallback.sh"
+SPAWN_SCRIPT="$FRAMEWORK_ROOT/orgs/main/agents/jarvis/bin/spawn-codex-workers.sh"
 PASS=0
 FAIL=0
 
@@ -90,14 +91,53 @@ else
   fail "acct1 status line not found or unparseable"
 fi
 
-if echo "$output" | grep -q "acct2:.*capped\|acct2:.*allowed\|acct2:.*error"; then
-  pass "acct2 status is parseable (capped/allowed/error)"
+if echo "$output" | grep -q "acct2:.*capped\|acct2:.*allowed\|acct2:.*error\|acct2:.*revoked\|acct2:.*auth-missing"; then
+  pass "acct2 status is parseable (capped/allowed/error/revoked/auth-missing)"
 else
   fail "acct2 status line not found or unparseable"
 fi
 
-# ── Test 6: Config backup exists when degraded ─────────────────────────────────
-log "Test 6: forge backup exists (or forge not yet degraded)"
+if echo "$output" | grep -q "acct3:.*capped\|acct3:.*allowed\|acct3:.*error\|acct3:.*revoked\|acct3:.*auth-missing"; then
+  pass "acct3 status is parseable (capped/allowed/error/revoked/auth-missing)"
+else
+  fail "acct3 status line not found or unparseable"
+fi
+
+# ── Test 6: Simulated acct1 revoked, acct2 capped, acct3 allowed ─────────────
+log "Test 6: simulated mixed account states keep Codex live on acct3"
+fixture="$(mktemp)"
+cat > "$fixture" <<EOF
+{
+  "$HOME/.codex": {"state": "revoked", "detail": "token rejected"},
+  "$HOME/.codex-acct2": {"state": "capped", "detail": "weekly 100%"},
+  "$HOME/.codex-acct3": {"state": "allowed", "detail": "usage 15%", "email": "acct3@example.com"}
+}
+EOF
+output=$(CODEX_ACCOUNT_HEALTH_FIXTURE="$fixture" bash "$FALLBACK_SCRIPT" --dry-run 2>&1)
+if echo "$output" | grep -q "any_available=true" && ! echo "$output" | grep -q "DEGRADING"; then
+  pass "Fallback stays on Codex while acct3 remains usable"
+else
+  fail "Fallback should not degrade when acct3 is allowed. Output:"
+  echo "$output"
+fi
+
+taskdir="$(mktemp -d)"
+printf 'task one\n' > "$taskdir/task-one.txt"
+printf 'task two\n' > "$taskdir/task-two.txt"
+output=$(CODEX_ACCOUNT_HEALTH_FIXTURE="$fixture" CODEX_DISPATCH_DRY_RUN=1 bash "$SPAWN_SCRIPT" \
+  "$taskdir/task-one.txt" "$taskdir/task-two.txt" 2>&1)
+if echo "$output" | grep -q "spawned-dry-run: task-one (acct=.codex-acct3)" && \
+   echo "$output" | grep -q "spawned-dry-run: task-two (acct=.codex-acct3)"; then
+  pass "Spawn dispatch routes all tasks to acct3 only"
+else
+  fail "Spawn dispatch did not route both tasks to acct3 only. Output:"
+  echo "$output"
+fi
+rm -f "$fixture"
+rm -rf "$taskdir"
+
+# ── Test 7: Config backup exists when degraded ─────────────────────────────────
+log "Test 7: forge backup exists (or forge not yet degraded)"
 backup="/Users/chrisjackson/cortextos/orgs/main/agents/forge/config.json.codex-fallback-backup"
 if [[ -f "$backup" ]]; then
   # Verify backup has original Codex runtime
@@ -115,8 +155,8 @@ else
   fi
 fi
 
-# ── Test 7: Current forge config reflects degraded state ──────────────────────
-log "Test 7: Forge config.json reflects current fallback state"
+# ── Test 8: Current forge config reflects degraded state ──────────────────────
+log "Test 8: Forge config.json reflects current fallback state"
 forge_config="/Users/chrisjackson/cortextos/orgs/main/agents/forge/config.json"
 forge_runtime=$(python3 -c "import json; d=json.load(open('$forge_config')); print(d.get('runtime','?'))" 2>/dev/null || echo "?")
 forge_fallback_active=$(python3 -c "import json; d=json.load(open('$forge_config')); print(d.get('_codex_fallback_active',False))" 2>/dev/null || echo "False")

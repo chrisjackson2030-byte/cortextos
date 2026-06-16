@@ -30,6 +30,7 @@
 #     "bash $CTX_FRAMEWORK_ROOT/scripts/codex-fallback.sh 2>&1 | tail -5"
 
 set -euo pipefail
+PATH="/opt/homebrew/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRAMEWORK_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -37,9 +38,11 @@ FRAMEWORK_ROOT="$(dirname "$SCRIPT_DIR")"
 # ── Config ────────────────────────────────────────────────────────────────────
 ACCT1_HOME="$HOME/.codex"
 ACCT2_HOME="$HOME/.codex-acct2"
+ACCT3_HOME="$HOME/.codex-acct3"   # added 2026-06-16 (B's 3rd full account)
 JARVIS_CHAT="7876203094"
 FALLBACK_MODEL="claude-sonnet-4-6"
 CLI="$FRAMEWORK_ROOT/dist/cli.js"
+HEALTH_HELPER="$FRAMEWORK_ROOT/scripts/codex-account-health.py"
 STATE_DIR="${HOME}/.cortextos/default/state/usage"
 FALLBACK_STATE="$STATE_DIR/codex-fallback.json"
 # Live-from-disk runtime-override stamp the boot generator reads each run so a
@@ -76,95 +79,6 @@ send_telegram() {
   if [[ -f "$CLI" ]]; then
     node "$CLI" bus send-telegram "$JARVIS_CHAT" "$msg" 2>/dev/null || true
   fi
-}
-
-# Check if a Codex account is capped by querying the usage API.
-# Returns one of:
-#   allowed:<weekly_pct>%:<email>
-#   capped:<weekly_pct>%:<reset_minutes>m:<email>
-#   error:<reason>
-check_account_cap() {
-  local home="$1"
-  local auth_file="$home/auth.json"
-
-  if [[ ! -f "$auth_file" ]]; then
-    echo "error:auth.json_not_found"
-    return
-  fi
-
-  python3 - "$auth_file" <<'PYEOF'
-import json, base64, time, sys, urllib.request, urllib.error
-
-auth_file = sys.argv[1]
-try:
-    auth = json.load(open(auth_file))
-    toks = auth.get('tokens', auth)
-    tok = toks.get('access_token', '')
-    if not tok:
-        print('error:no_access_token')
-        sys.exit(0)
-
-    # Check if token is still valid (>5 min remaining)
-    seg = tok.split('.')[1]
-    seg += '=' * (-len(seg) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(seg))
-    access_token = tok
-
-    if payload.get('exp', 0) - time.time() <= 300:
-        # Try refresh
-        refresh_token = toks.get('refresh_token', '')
-        if not refresh_token:
-            print('error:token_expired_no_refresh')
-            sys.exit(0)
-        try:
-            req = urllib.request.Request(
-                'https://auth.openai.com/oauth/token',
-                data=json.dumps({
-                    'grant_type': 'refresh_token',
-                    'refresh_token': refresh_token,
-                    'client_id': 'app_EMoamEEZ73f0CkXaXp7hrann'
-                }).encode(),
-                headers={'Content-Type': 'application/json'}
-            )
-            with urllib.request.urlopen(req, timeout=15) as r:
-                d = json.loads(r.read())
-                access_token = d.get('access_token', '')
-                if not access_token:
-                    print('error:refresh_failed_no_token')
-                    sys.exit(0)
-        except Exception as e:
-            print(f'error:refresh_failed:{e}')
-            sys.exit(0)
-
-    # Query the Codex usage API
-    req = urllib.request.Request(
-        'https://chatgpt.com/backend-api/codex/usage',
-        headers={
-            'Authorization': f'Bearer {access_token}',
-            'User-Agent': 'codex-cli',
-            'Accept': 'application/json'
-        }
-    )
-    with urllib.request.urlopen(req, timeout=15) as r:
-        u = json.loads(r.read())
-
-    rl = u.get('rate_limit', {})
-    allowed = rl.get('allowed', True)
-    limit_reached = rl.get('limit_reached', False)
-    sec = rl.get('secondary_window', {})
-    weekly_pct = sec.get('used_percent', 0) or 0
-    reset_secs = sec.get('reset_after_seconds') or 0
-    reset_min = int(reset_secs / 60)
-    email = u.get('email', 'unknown') or 'unknown'
-
-    if not allowed or limit_reached:
-        print(f'capped:{weekly_pct:.0f}%:{reset_min}m:{email}')
-    else:
-        print(f'allowed:{weekly_pct:.0f}%:{email}')
-
-except Exception as e:
-    print(f'error:{e}')
-PYEOF
 }
 
 # Get current runtime from agent's config.json
@@ -392,29 +306,65 @@ restore_agent() {
 mkdir -p "$STATE_DIR"
 log "=== Codex fallback check starting ==="
 
-# Check both accounts
-log "Checking acct1 ($ACCT1_HOME)..."
-acct1_result=$(check_account_cap "$ACCT1_HOME")
+HELPER_ARGS=()
+[[ -n "${CODEX_ACCOUNT_HEALTH_FIXTURE:-}" ]] && HELPER_ARGS+=(--fixture "$CODEX_ACCOUNT_HEALTH_FIXTURE")
+HELPER_CMD=(python3 "$HEALTH_HELPER" --format json "$ACCT1_HOME" "$ACCT2_HOME" "$ACCT3_HOME")
+if [[ ${#HELPER_ARGS[@]} -gt 0 ]]; then
+  HELPER_CMD=(python3 "$HEALTH_HELPER" "${HELPER_ARGS[@]}" --format json "$ACCT1_HOME" "$ACCT2_HOME" "$ACCT3_HOME")
+fi
+HEALTH_JSON="$("${HELPER_CMD[@]}")"
+
+read_account_field() {
+  local home="$1"
+  local field="$2"
+  printf '%s' "$HEALTH_JSON" | python3 -c '
+import json, sys
+home, field = sys.argv[1], sys.argv[2]
+payload = json.load(sys.stdin)
+for account in payload.get("accounts", []):
+    if account.get("home") == home:
+        value = account.get(field)
+        print("" if value is None else value)
+        break
+' "$home" "$field"
+}
+
+acct1_status=$(read_account_field "$ACCT1_HOME" "state")
+acct1_detail=$(read_account_field "$ACCT1_HOME" "detail")
+acct1_email=$(read_account_field "$ACCT1_HOME" "email")
+acct1_result="${acct1_status}:${acct1_detail}:${acct1_email:-unknown}"
 log "  acct1: $acct1_result"
 
-log "Checking acct2 ($ACCT2_HOME)..."
-acct2_result=$(check_account_cap "$ACCT2_HOME")
+acct2_status=$(read_account_field "$ACCT2_HOME" "state")
+acct2_detail=$(read_account_field "$ACCT2_HOME" "detail")
+acct2_email=$(read_account_field "$ACCT2_HOME" "email")
+acct2_result="${acct2_status}:${acct2_detail}:${acct2_email:-unknown}"
 log "  acct2: $acct2_result"
 
-acct1_status=$(echo "$acct1_result" | cut -d: -f1)
-acct2_status=$(echo "$acct2_result" | cut -d: -f1)
+acct3_status=$(read_account_field "$ACCT3_HOME" "state")
+acct3_detail=$(read_account_field "$ACCT3_HOME" "detail")
+acct3_email=$(read_account_field "$ACCT3_HOME" "email")
+acct3_result="${acct3_status}:${acct3_detail}:${acct3_email:-unknown}"
+log "  acct3: $acct3_result"
 
-# Determine overall state
+healthy_homes=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && healthy_homes+=("$line")
+done < <(printf '%s' "$HEALTH_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); [print(x) for x in d.get("healthy_homes", [])]')
+
+# Determine overall state across ALL THREE accounts. Degrade ONLY when NO account
+# is available. Pure transient probe-error across every account remains a skip.
+# both_capped kept as the degrade flag name for downstream compatibility.
 both_capped=false
 any_available=false
 both_error=false
 
-if [[ "$acct1_status" == "capped" && "$acct2_status" == "capped" ]]; then
-  both_capped=true
-elif [[ "$acct1_status" == "allowed" || "$acct2_status" == "allowed" ]]; then
+if [[ ${#healthy_homes[@]} -gt 0 ]]; then
   any_available=true
-elif [[ "$acct1_status" == "error" && "$acct2_status" == "error" ]]; then
+elif [[ "$acct1_status" == "error" || "$acct2_status" == "error" || "$acct3_status" == "error" ]]; then
   both_error=true
+else
+  both_capped=true
 fi
 
 # Force flags for testing
@@ -422,6 +372,9 @@ fi
 [[ "$FORCE_RESTORE" == "true" ]] && both_capped=false && any_available=true && both_error=false && log "[FORCE_RESTORE]"
 
 log "State → both_capped=$both_capped | any_available=$any_available | both_error=$both_error"
+if [[ "$any_available" == "true" && ${#healthy_homes[@]} -eq 1 ]]; then
+  log "Info → only one usable Codex account remains: $(basename "${healthy_homes[0]}")"
+fi
 
 # Process each Codex agent
 degraded_agents=""
@@ -456,7 +409,7 @@ for pair in "${CODEX_AGENT_PAIRS[@]}"; do
     fi
 
   elif [[ "$both_error" == "true" ]]; then
-    log "$agent: both accounts returned errors (network/transient?) — skipping degrade"
+    log "$agent: account probes returned errors (network/transient?) — skipping degrade"
   fi
 done
 
@@ -468,21 +421,28 @@ if [[ -n "$degraded_agents" && "$DRY_RUN" == "false" ]]; then
 fi
 
 if [[ -n "$restored_agents" && "$DRY_RUN" == "false" ]]; then
-  available="${acct1_status}/${acct2_status}"
+  available="${acct1_status}/${acct2_status}/${acct3_status}"
   send_telegram "CODEX RESTORED: Weekly cap cleared. Agents [$restored_agents] restored to Codex runtime and restarted. (acct status: $available)"
   log "Restoration alert sent"
 fi
 
 # Write last-check summary
-python3 - "$FALLBACK_STATE" "$acct1_result" "$acct2_result" \
+healthy_csv=""
+if [[ ${#healthy_homes[@]} -gt 0 ]]; then
+  healthy_csv="$(IFS=,; echo "${healthy_homes[*]}")"
+fi
+
+python3 - "$FALLBACK_STATE" "$acct1_result" "$acct2_result" "$acct3_result" \
           "$( [[ $both_capped == true ]] && echo True || echo False )" \
           "$( [[ $any_available == true ]] && echo True || echo False )" \
-          "$degraded_agents" "$restored_agents" <<'PYEOF'
+          "$degraded_agents" "$restored_agents" \
+          "$healthy_csv" <<'PYEOF'
 import json, sys
 from datetime import datetime, timezone
 
-state_file, a1, a2, both_capped, any_avail, degraded, restored = (
-    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+state_file, a1, a2, a3, both_capped, any_avail, degraded, restored, healthy = (
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5],
+    sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9])
 
 try:
     state = json.load(open(state_file))
@@ -491,9 +451,10 @@ except Exception:
 
 state['_last_check'] = {
     'ts': datetime.now(timezone.utc).isoformat(),
-    'acct1': a1, 'acct2': a2,
+    'acct1': a1, 'acct2': a2, 'acct3': a3,
     'both_capped': both_capped == 'True',
     'any_available': any_avail == 'True',
+    'healthy_homes': [h for h in healthy.split(',') if h],
     'degraded': degraded, 'restored': restored
 }
 
