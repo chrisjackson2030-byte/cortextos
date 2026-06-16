@@ -518,6 +518,15 @@ export class AgentManager {
         const effectiveChatId = msgChatId ?? chatId ?? '';
         const stateDir = join(this.ctxRoot, 'state', name);
 
+        // WS7 fast-path auto-ack: if the agent is mid-turn, send an immediate
+        // decoupled ack before injecting the message. This fires synchronously
+        // and independently of the pollCycle inject path, so B sees a reply in
+        // under a second instead of waiting for the current turn to finish.
+        // No-op when idle (agent would ack naturally); deduped to 1 per 30s.
+        if (telegramApi && effectiveChatId) {
+          checker.maybeAutoAck(agentProcess.isBusy(), telegramApi, String(effectiveChatId));
+        }
+
         // Check for media messages (photo, document, voice, audio, video, video_note)
         const isMedia = !!(msg.photo || msg.document || msg.voice || msg.audio || msg.video || msg.video_note);
 

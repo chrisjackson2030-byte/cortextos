@@ -64,6 +64,10 @@ export class FastChecker {
   private rlNotifiedAt: number = 0;      // 0 = not yet notified; ms timestamp when notified
   private rlResetAfter: number = 0;      // when the detection window auto-resets (ms)
 
+  // WS7 fast-path auto-ack state: timestamp of the most recent auto-ack sent (ms).
+  // 0 = none sent yet. Tracks per busy-window dedup (one ack per dedupeWindowMs).
+  private lastAutoAckAt: number = 0;
+
   constructor(
     agent: AgentProcess,
     paths: BusPaths,
@@ -1243,6 +1247,37 @@ Reply using: cortextos bus send-telegram ${chatId} '<your reply>'
     } catch {
       // Non-critical
     }
+  }
+
+  /**
+   * WS7 fast-path auto-ack: send an immediate "received, on it" reply when
+   * the agent is mid-turn (busy) so B gets a sub-second response instead of
+   * waiting up to 5 minutes for the current turn to finish before the message
+   * is even injected.
+   *
+   * Gate: fires only when `isBusy` is true. No-op when idle — the agent will
+   * respond naturally within milliseconds and a pre-emptive ack would be noise.
+   *
+   * Dedup: at most one auto-ack per `dedupeWindowMs` (default 30s). Multiple
+   * rapid-fire messages during a single busy window get a single ack, not a
+   * reply per message.
+   *
+   * Returns true if an ack was sent, false if skipped (idle or within window).
+   * Failures from sendMessage are swallowed — the ack is best-effort.
+   */
+  maybeAutoAck(
+    isBusy: boolean,
+    api: TelegramAPI,
+    chatId: string,
+    dedupeWindowMs: number = 30_000,
+  ): boolean {
+    if (!isBusy) return false;
+    const now = Date.now();
+    if (now - this.lastAutoAckAt < dedupeWindowMs) return false;
+    this.lastAutoAckAt = now;
+    api.sendMessage(chatId, 'received, on it').catch(() => {});
+    this.log('Auto-ack sent (agent busy mid-turn)');
+    return true;
   }
 
   /**
