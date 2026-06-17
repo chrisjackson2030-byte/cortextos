@@ -203,7 +203,21 @@ def main() -> int:
     args = parser.parse_args()
 
     fixture = json.loads(Path(args.fixture).read_text()) if args.fixture else None
-    accounts = [probe_home(Path(home).expanduser(), fixture=fixture) for home in args.homes]
+
+    def _probe_retry(home_path: Path) -> dict[str, Any]:
+        # "error" is a TRANSIENT network/API failure (unlike "revoked"/"capped", which are
+        # real). Retry once before trusting a 0/dead result, so a momentary blip cannot
+        # report a healthy account as unusable (false RED, B caught 2026-06-16).
+        import time as _t
+        r = probe_home(home_path, fixture=fixture)
+        if r.get("state") == "error" and fixture is None:
+            _t.sleep(2)
+            r2 = probe_home(home_path, fixture=fixture)
+            if r2.get("usable") or r2.get("state") != "error":
+                return r2
+        return r
+
+    accounts = [_probe_retry(Path(home).expanduser()) for home in args.homes]
     payload = {
         "accounts": accounts,
         "healthy_homes": [account["home"] for account in accounts if account["usable"]],
