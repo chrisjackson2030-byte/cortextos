@@ -1,0 +1,26 @@
+{
+  "incident_id": "INC-2026-06-18-nova-rolling-cap-stall",
+  "date": "2026-06-18",
+  "component": "nova (analyst agent)",
+  "title": "Nova agent session stalled ~3h11m on a Sonnet rolling-cap modal",
+  "process_alive": true,
+  "useful_progress_absent": true,
+  "window": "2026-06-18T18:47:21Z (last good action) to 2026-06-18T21:58:22Z (recovery)",
+  "duration_minutes": 191,
+  "cause_status": "VERIFIED (was 'unverified' at first report; evidence-backed after diagnosis)",
+  "cause": "Rolling/session Sonnet rate-limit. The TUI emitted 'You have hit your Sonnet limit, resets Jun 23 at 4am' and dropped into a blocking /rate-limit-options modal awaiting a keystroke. The session stayed alive but produced ~0 work until the 21:58Z heartbeat cron injected text that dismissed the modal. Rolling (5h-class) limit, not the hard weekly cap (it self-recovered before Jun 23).",
+  "classification": "CAPPED (rolling, auto-cleared); symptom resembled SESSION_STALLED (frozen modal)",
+  "confidence": 0.9,
+  "impact": [
+    "missed monitoring during the window",
+    "missed the 18:49Z H10 lift evaluation (executed late ~22:00Z on recovery)",
+    "production review gate unavailable during the window (available again after recovery; review later completed PASS 5/5)"
+  ],
+  "self_recovered": true,
+  "recovery_mechanism": "heartbeat cron injected text dismissed the modal at 21:58:22Z",
+  "evidence": "state/proof/nova-stall-diagnosis-2026-06-18.md (byte offsets in ~/.cortextos/default/logs/nova/stdout.log)",
+  "ruled_out": ["AUTH_FAILED (no 401/403 tied to gap)", "QUEUE_BLOCKED (inbox empty)", "PTY_STALLED/crash (no SIGKILL/EOF/OOM; clean resume)"],
+  "recurrence_risk": "Nova weekly budget ~80%+; may re-hit the rolling cap under heavy load before the Jun 23 04:00 ET reset",
+  "remediation": "Daemon-side fix filed (task): detect the /rate-limit-options modal and auto-select 'Stop and wait' or send Esc instead of waiting for the next cron. Prevents multi-hour dark periods for any Sonnet agent.",
+  "status": "resolved (self-recovered); systemic fix pending"
+}
