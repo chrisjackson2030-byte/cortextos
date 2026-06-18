@@ -56,6 +56,7 @@ export function logEvent(
     agent: agentName,
     org,
     timestamp,
+    trace_id: typeof meta.trace_id === 'string' ? meta.trace_id : undefined,
     category,
     event: eventName,
     severity,

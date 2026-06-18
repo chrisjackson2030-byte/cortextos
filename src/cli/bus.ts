@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { spawnSync, execFileSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { homedir } from 'os';
 import { sendMessage, checkInbox, ackInbox } from '../bus/message.js';
@@ -23,6 +24,7 @@ import { indexSessions, searchSessions, listSessions, getSessionContext } from '
 import { checkUsageApi, refreshOAuthToken, rotateOAuth, loadAccounts, ALERT_5H, ALERT_7D } from '../bus/oauth.js';
 import { resolvePaths } from '../utils/paths.js';
 import { resolveEnv } from '../utils/env.js';
+import { isFeatureEnabled } from '../utils/feature-flags.js';
 import { IPCClient } from '../daemon/ipc-server.js';
 import { TelegramAPI } from '../telegram/api.js';
 import { logOutboundMessage, cacheLastSent } from '../telegram/logging.js';
@@ -602,6 +604,50 @@ busCommand
     const paths = resolvePaths(env.agentName, env.instanceId, env.org);
     logEvent(paths, env.agentName, env.org, category as EventCategory, event, severity as EventSeverity, opts.meta);
     console.log(`Logged ${category}/${event} (${severity})`);
+  });
+
+busCommand
+  .command('query-trace')
+  .argument('<traceId>', 'Trace ID to search for')
+  .action((traceId: string) => {
+    const env = resolveEnv();
+    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
+    const eventsRoot = join(paths.analyticsDir, 'events');
+    const matches: Array<{ timestamp: string; raw: string }> = [];
+    if (existsSync(eventsRoot)) {
+      for (const agentDir of readdirSync(eventsRoot, { withFileTypes: true })) {
+        if (!agentDir.isDirectory()) continue;
+        const agentPath = join(eventsRoot, agentDir.name);
+        for (const file of readdirSync(agentPath)) {
+          if (!file.endsWith('.jsonl')) continue;
+          for (const line of readFileSync(join(agentPath, file), 'utf-8').split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line) as { trace_id?: string; timestamp?: string };
+              if (event.trace_id === traceId && event.timestamp) matches.push({ timestamp: event.timestamp, raw: line });
+            } catch {}
+          }
+        }
+      }
+    }
+    matches.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    for (const match of matches) console.log(match.raw);
+  });
+
+busCommand
+  .command('canary-tick')
+  .action(() => {
+    if (!isFeatureEnabled('FEATURE_TRACE_ID')) {
+      console.log('FEATURE_TRACE_ID off');
+      return;
+    }
+    const env = resolveEnv();
+    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
+    const trace_id = `trace_${Date.now()}_${randomBytes(3).toString('hex')}`;
+    for (const eventName of ['canary_start', 'canary_work', 'canary_end']) {
+      logEvent(paths, env.agentName, env.org, 'action', eventName, 'info', { trace_id });
+    }
+    console.log(trace_id);
   });
 
 busCommand

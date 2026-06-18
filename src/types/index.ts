@@ -92,6 +92,7 @@ export interface Event {
   agent: string;
   org: string;
   timestamp: string; // ISO 8601
+  trace_id?: string;
   category: EventCategory;
   event: string;
   severity: EventSeverity;
