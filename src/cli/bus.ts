@@ -10,7 +10,7 @@ import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTa
 import { saveOutput } from '../bus/save-output.js';
 import { logEvent } from '../bus/event.js';
 import { readLatestOutcomeHeartbeat, writeOutcomeHeartbeat } from '../bus/outcome-hb.js';
-import { completeRun, getRun, startRun } from '../bus/run-store.js';
+import { completeRun, expireStaleRuns, getRun, joinRun, startRun } from '../bus/run-store.js';
 import { updateHeartbeat, readAllHeartbeats, isHeartbeatStale } from '../bus/heartbeat.js';
 import { selfRestart, hardRestart, autoCommit, checkGoalStaleness, postActivity } from '../bus/system.js';
 import { createExperiment, runExperiment, evaluateExperiment, listExperiments, gatherContext, manageCycle, loadExperimentConfig } from '../bus/experiment.js';
@@ -689,12 +689,18 @@ busCommand
 busCommand
   .command('start-run')
   .argument('[traceId]', 'Optional trace ID')
-  .action((traceId?: string) => {
+  .option('--lease-seconds <n>', 'Optional lease duration in seconds')
+  .action((traceId: string | undefined, opts: { leaseSeconds?: string }) => {
     if (!isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
       console.log('FEATURE_COMPLETION_CONTRACT off');
       return;
     }
-    console.log(JSON.stringify(startRun(traceId)));
+    if (opts.leaseSeconds && !isFeatureEnabled('FEATURE_LEASE_JOIN')) {
+      console.log('FEATURE_LEASE_JOIN off');
+      return;
+    }
+    const leaseSeconds = opts.leaseSeconds ? Number.parseInt(opts.leaseSeconds, 10) : undefined;
+    console.log(JSON.stringify(startRun(traceId, leaseSeconds)));
   });
 
 busCommand
@@ -747,6 +753,27 @@ busCommand
       return;
     }
     console.log(JSON.stringify(getRun(run_id)));
+  });
+
+busCommand
+  .command('join-run')
+  .argument('<run_id>', 'Run ID')
+  .action((run_id: string) => {
+    if (!isFeatureEnabled('FEATURE_LEASE_JOIN')) {
+      console.log('FEATURE_LEASE_JOIN off');
+      return;
+    }
+    console.log(JSON.stringify(joinRun(run_id)));
+  });
+
+busCommand
+  .command('expire-stale')
+  .action(() => {
+    if (!isFeatureEnabled('FEATURE_LEASE_JOIN')) {
+      console.log('FEATURE_LEASE_JOIN off');
+      return;
+    }
+    console.log(JSON.stringify({ expired: expireStaleRuns() }));
   });
 
 busCommand

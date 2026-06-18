@@ -16,11 +16,12 @@ const RUNS_SCHEMA = `
     blockers TEXT,
     next_action TEXT,
     emitted_at TEXT,
-    created_at TEXT
+    created_at TEXT,
+    lease_deadline TEXT
   )
 `;
 
-const TERMINAL_STATUSES = new Set(['done', 'failed', 'blocked']);
+const TERMINAL_STATUSES = new Set(['done', 'failed', 'blocked', 'stalled']);
 
 export interface RunRecord {
   run_id: string;
@@ -33,6 +34,7 @@ export interface RunRecord {
   next_action: string | null;
   emitted_at: string | null;
   created_at: string;
+  lease_deadline: string | null;
 }
 
 export interface RunStartRecord {
@@ -52,10 +54,15 @@ type RawRunRow = {
   next_action: string | null;
   emitted_at: string | null;
   created_at: string;
+  lease_deadline: string | null;
 };
 
 function nowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function leaseDeadlineIso(leaseSeconds: number): string {
+  return new Date(Date.now() + (leaseSeconds * 1000)).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 function analyticsDir(): string {
@@ -91,6 +98,7 @@ function toRunRecord(row: RawRunRow | undefined): RunRecord | null {
     next_action: row.next_action,
     emitted_at: row.emitted_at,
     created_at: row.created_at,
+    lease_deadline: row.lease_deadline,
   };
 }
 
@@ -104,6 +112,11 @@ function withDb<T>(fn: (db: InstanceType<typeof Database>) => T): T | null {
     db.pragma('busy_timeout = 5000');
     db.pragma('synchronous = NORMAL');
     db.exec(RUNS_SCHEMA);
+    try {
+      db.exec('ALTER TABLE runs ADD COLUMN lease_deadline TEXT');
+    } catch {
+      // Existing databases may already have the column.
+    }
     return fn(db);
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('run_token mismatch')) {
@@ -119,17 +132,18 @@ function withDb<T>(fn: (db: InstanceType<typeof Database>) => T): T | null {
   }
 }
 
-export function startRun(traceId?: string): RunStartRecord | null {
+export function startRun(traceId?: string, leaseSeconds?: number): RunStartRecord | null {
   return withDb((db) => {
     const run_id = `run_${Date.now()}_${randomBytes(3).toString('hex')}`;
     const run_token = randomBytes(8).toString('hex');
     const trace_id = traceId ?? null;
     const created_at = nowIso();
+    const lease_deadline = typeof leaseSeconds === 'number' ? leaseDeadlineIso(leaseSeconds) : null;
     db.prepare(`
       INSERT INTO runs (
-        run_id, trace_id, run_token, status, result, artifacts, blockers, next_action, emitted_at, created_at
-      ) VALUES (?, ?, ?, 'running', NULL, NULL, NULL, NULL, NULL, ?)
-    `).run(run_id, trace_id, run_token, created_at);
+        run_id, trace_id, run_token, status, result, artifacts, blockers, next_action, emitted_at, created_at, lease_deadline
+      ) VALUES (?, ?, ?, 'running', NULL, NULL, NULL, NULL, NULL, ?, ?)
+    `).run(run_id, trace_id, run_token, created_at, lease_deadline);
     return { run_id, run_token, trace_id };
   });
 }
@@ -175,4 +189,37 @@ export function getRunByTrace(trace_id: string): RunRecord | null {
   return withDb((db) => toRunRecord(
     db.prepare('SELECT * FROM runs WHERE trace_id = ? ORDER BY created_at DESC LIMIT 1').get(trace_id) as RawRunRow | undefined,
   ));
+}
+
+export function expireStaleRuns(): number {
+  const result = withDb((db) => db.prepare(`
+    UPDATE runs
+    SET status = 'stalled'
+    WHERE status = 'running'
+      AND lease_deadline IS NOT NULL
+      AND lease_deadline < ?
+  `).run(nowIso()).changes);
+
+  return result ?? 0;
+}
+
+export function joinRun(run_id: string): RunRecord | null {
+  return withDb((db) => {
+    const select = db.prepare('SELECT * FROM runs WHERE run_id = ?');
+    const existing = toRunRecord(select.get(run_id) as RawRunRow | undefined);
+    if (!existing) return null;
+    if (TERMINAL_STATUSES.has(existing.status)) return existing;
+
+    const now = nowIso();
+    if (existing.lease_deadline && existing.lease_deadline < now) {
+      db.prepare(`
+        UPDATE runs
+        SET status = 'stalled'
+        WHERE run_id = ?
+      `).run(run_id);
+      return toRunRecord(select.get(run_id) as RawRunRow | undefined);
+    }
+
+    return existing;
+  });
 }
