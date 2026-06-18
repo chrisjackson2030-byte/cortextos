@@ -10,7 +10,7 @@ import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTa
 import { saveOutput } from '../bus/save-output.js';
 import { logEvent } from '../bus/event.js';
 import { readLatestOutcomeHeartbeat, writeOutcomeHeartbeat } from '../bus/outcome-hb.js';
-import { completeRun, expireStaleRuns, getRun, joinRun, startRun } from '../bus/run-store.js';
+import { completeRun, expireStaleRuns, getRun, getRunByTrace, joinRun, startRun } from '../bus/run-store.js';
 import { updateHeartbeat, readAllHeartbeats, isHeartbeatStale } from '../bus/heartbeat.js';
 import { selfRestart, hardRestart, autoCommit, checkGoalStaleness, postActivity } from '../bus/system.js';
 import { createExperiment, runExperiment, evaluateExperiment, listExperiments, gatherContext, manageCycle, loadExperimentConfig } from '../bus/experiment.js';
@@ -753,6 +753,17 @@ busCommand
       return;
     }
     console.log(JSON.stringify(getRun(run_id)));
+  });
+
+busCommand
+  .command('get-run-by-trace')
+  .argument('<trace_id>', 'Trace ID')
+  .action((trace_id: string) => {
+    if (!isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
+      console.log('FEATURE_COMPLETION_CONTRACT off');
+      return;
+    }
+    console.log(JSON.stringify(getRunByTrace(trace_id)));
   });
 
 busCommand
