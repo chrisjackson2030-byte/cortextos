@@ -1,0 +1,132 @@
+; cortextOS Specialist Agent Sandbox Profile
+; Agent types: atlas, forge, analyst (and future specialists)
+;
+; Required parameters (-D flags when invoking sandbox-exec):
+;   AGENT_DIR        — absolute path to agent working dir
+;                      e.g. /Users/x/cortextos/orgs/main/agents/atlas
+;   CTX_ROOT         — absolute path to cortextOS state root
+;                      e.g. /Users/x/.cortextos/default
+;   HOME_DIR         — absolute path to user home, e.g. /Users/x
+;   CLAUDE_PROJ_DIR  — absolute path to agent's Claude project dir
+;                      e.g. /Users/x/.claude/projects/-Users-x-...-atlas
+;   DAEMON_SOCK      — absolute path to daemon socket
+;                      e.g. /Users/x/.cortextos/default/daemon.sock
+;
+;   Per-agent deny params (list every OTHER agent dir — NOT this agent's own):
+;   DENY_AGENT_1     — first sibling agent dir to deny reads from
+;   DENY_AGENT_2     — second sibling agent dir  (use /dev/null if only 2 agents)
+;   DENY_AGENT_3     — third sibling agent dir   (use /dev/null if unused)
+;   DENY_AGENT_4     — fourth sibling agent dir  (use /dev/null if unused)
+;
+; Example for atlas (denying forge, jarvis, analyst):
+;   sandbox-exec -f cortextos-specialist.sb \
+;     -D AGENT_DIR=/Users/x/cortextos/orgs/main/agents/atlas \
+;     -D CTX_ROOT=/Users/x/.cortextos/default \
+;     -D HOME_DIR=/Users/x \
+;     -D CLAUDE_PROJ_DIR=/Users/x/.claude/projects/-Users-x-cortextos-orgs-main-agents-atlas \
+;     -D DAEMON_SOCK=/Users/x/.cortextos/default/daemon.sock \
+;     -D DENY_AGENT_1=/Users/x/cortextos/orgs/main/agents/forge \
+;     -D DENY_AGENT_2=/Users/x/cortextos/orgs/main/agents/jarvis \
+;     -D DENY_AGENT_3=/Users/x/cortextos/orgs/main/agents/analyst \
+;     -D DENY_AGENT_4=/dev/null \
+;     claude --continue "..."
+;
+; Isolation guarantees (verified on macOS Sequoia 15.7.3, M4):
+;   ALLOW  — file reads anywhere on filesystem (required for dylib loading)
+;   DENY   — reads from all sibling agents' dirs (kernel-enforced EPERM)
+;   ALLOW  — file writes within own AGENT_DIR only
+;   ALLOW  — file writes within CTX_ROOT (bus ops: inbox, outbox, state, logs)
+;   ALLOW  — file writes within own CLAUDE_PROJ_DIR (conversation history)
+;   ALLOW  — file writes to /tmp and /var/folders (Node.js internals)
+;   DENY   — writes everywhere else (HOME_DIR/.claude, system dirs, other agents)
+;   ALLOW  — HTTPS outbound (port 443) + HTTP (port 80) + DNS
+;   ALLOW  — daemon IPC socket (for self-restart)
+
+(version 1)
+(deny default)
+
+; ── Process infrastructure ──────────────────────────────────────────────────
+(allow process-fork)
+(allow process-exec)
+(allow signal)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow mach-register)
+(allow ipc-posix-sem)
+(allow ipc-posix-shm)
+(allow ipc-posix-shm-read-data)
+(allow ipc-posix-shm-write-data)
+(allow file-ioctl)
+(allow iokit-open)
+
+; ── File reads — broad allow, then targeted denies ──────────────────────────
+; Broad read required: macOS processes need reads across /System, /Library,
+; /usr, /private, /dev etc. for dylib loading, locale data, entitlements.
+; Attempting to allowlist specific paths causes SIGABRT on Sequoia 15.x.
+(allow file-read* (subpath "/"))
+
+; Deny reads from all sibling agent dirs (parametrized per agent)
+(deny file-read* (subpath (param "DENY_AGENT_1")))
+(deny file-read* (subpath (param "DENY_AGENT_2")))
+(deny file-read* (subpath (param "DENY_AGENT_3")))
+(deny file-read* (subpath (param "DENY_AGENT_4")))
+
+; ── File writes — tightly allowlisted ───────────────────────────────────────
+; Default write deny (from deny-default) enforces write isolation.
+; Only explicitly allow writes to agent's own scope.
+
+; Own agent workspace
+(allow file-write* (subpath (param "AGENT_DIR")))
+
+; cortextOS bus (inbox, outbox, state, logs — full bus access)
+(allow file-write* (subpath (param "CTX_ROOT")))
+
+; Own Claude conversation history
+(allow file-write* (subpath (param "CLAUDE_PROJ_DIR")))
+
+; Node.js internals and standard null device
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (literal "/dev/null"))
+(allow file-read*  (literal "/dev/null"))
+(allow file-write* (literal "/dev/stderr"))
+(allow file-write* (literal "/dev/stdout"))
+
+; PTY devices (required for node-pty)
+(allow file-read*  (literal "/dev/ptmx"))
+(allow file-write* (literal "/dev/ptmx"))
+(allow file-read*  (regex #"^/dev/ttys[0-9]+"))
+(allow file-write* (regex #"^/dev/ttys[0-9]+"))
+
+; ── Process execution ────────────────────────────────────────────────────────
+(allow process-exec
+    (subpath "/bin")
+    (subpath "/usr/bin")
+    (subpath "/sbin")
+    (subpath "/usr/sbin")
+    (subpath "/opt/homebrew/bin")
+    (subpath (string-append (param "HOME_DIR") "/.local/bin")))
+
+; ── Network ─────────────────────────────────────────────────────────────────
+; DNS via mDNSResponder
+(allow network-outbound
+    (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+; HTTPS (Anthropic API, Telegram Bot API, GitHub, web search)
+(allow network-outbound
+    (remote tcp4 "*:443")
+    (remote tcp6 "*:443"))
+; HTTP (non-TLS APIs; remove if agents never use plain HTTP)
+(allow network-outbound
+    (remote tcp4 "*:80")
+    (remote tcp6 "*:80"))
+
+; ── Daemon IPC socket (self-restart only) ───────────────────────────────────
+(allow network-outbound
+    (remote unix-socket (path-literal (param "DAEMON_SOCK"))))
+
+; ── Gate H canary: explicit credential containment (deny Keychain + securityd) ──
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/Library/Keychains")))
+(deny file-read* (subpath "/Library/Keychains"))
+(deny mach-lookup (global-name "com.apple.SecurityServer"))
+(deny mach-lookup (global-name "com.apple.securityd"))
+(deny mach-lookup (global-name "com.apple.secd"))
