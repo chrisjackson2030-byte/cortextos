@@ -219,6 +219,90 @@ describe('Hook Utilities', () => {
     });
   });
 
+  // Security micro-gate (#18, 2026-06-18): symlink-escape path validation.
+  // A "true" result means the path is inside the agent's own .claude/ tree and
+  // is allowed to auto-approve; "false" means it is NOT a safe .claude op (so it
+  // escapes / must be refused). Every escape variant below must return false; a
+  // genuine in-tree write must return true.
+  describe('isClaudeDirOperation symlink-escape hardening (#18 security micro-gate)', () => {
+    function fixture() {
+      const base = mkdtempSync(join(tmpdir(), 'symgate-'));
+      const agentDir = join(base, 'agent');
+      mkdirSync(join(agentDir, '.claude'), { recursive: true });
+      const outside = join(base, 'outside');
+      mkdirSync(outside, { recursive: true });
+      return { base, agentDir, outside };
+    }
+
+    it('refuses a DIRECT symlink escape (.claude/escape -> outside)', () => {
+      const { base, agentDir, outside } = fixture();
+      try {
+        symlinkSync(outside, join(agentDir, '.claude', 'escape'));
+        expect(isClaudeDirOperation('Write',
+          { file_path: join(agentDir, '.claude', 'escape', 'evil.txt') }, agentDir)).toBe(false);
+      } finally { rmSync(base, { recursive: true, force: true }); }
+    });
+
+    it('refuses a NESTED-directory symlink escape (.claude/sub/escape -> outside)', () => {
+      const { base, agentDir, outside } = fixture();
+      try {
+        mkdirSync(join(agentDir, '.claude', 'sub'), { recursive: true });
+        symlinkSync(outside, join(agentDir, '.claude', 'sub', 'escape'));
+        expect(isClaudeDirOperation('Edit',
+          { file_path: join(agentDir, '.claude', 'sub', 'escape', 'evil.txt') }, agentDir)).toBe(false);
+      } finally { rmSync(base, { recursive: true, force: true }); }
+    });
+
+    it('refuses a RELATIVE symlink escape (.claude/rel -> ../../outside)', () => {
+      const { base, agentDir } = fixture();
+      try {
+        // relative target that climbs out of the agent dir to base/outside
+        symlinkSync('../../outside', join(agentDir, '.claude', 'rel'));
+        expect(isClaudeDirOperation('Write',
+          { file_path: join(agentDir, '.claude', 'rel', 'evil.txt') }, agentDir)).toBe(false);
+      } finally { rmSync(base, { recursive: true, force: true }); }
+    });
+
+    it('refuses a DANGLING symlink (.claude/dangle -> /nonexistent)', () => {
+      const { base, agentDir } = fixture();
+      try {
+        symlinkSync(join(base, 'does-not-exist-xyz'), join(agentDir, '.claude', 'dangle'));
+        expect(isClaudeDirOperation('Write',
+          { file_path: join(agentDir, '.claude', 'dangle', 'evil.txt') }, agentDir)).toBe(false);
+      } finally { rmSync(base, { recursive: true, force: true }); }
+    });
+
+    it('ALLOWS a legitimate in-tree write (.claude/ok.txt)', () => {
+      const { base, agentDir } = fixture();
+      try {
+        expect(isClaudeDirOperation('Write',
+          { file_path: join(agentDir, '.claude', 'ok.txt') }, agentDir)).toBe(true);
+        // also a nested real dir is fine
+        mkdirSync(join(agentDir, '.claude', 'skills'), { recursive: true });
+        expect(isClaudeDirOperation('Edit',
+          { file_path: join(agentDir, '.claude', 'skills', 'SKILL.md') }, agentDir)).toBe(true);
+      } finally { rmSync(base, { recursive: true, force: true }); }
+    });
+
+    it('no TOCTOU swap survives re-validation (path validated fresh each call)', () => {
+      const { base, agentDir, outside } = fixture();
+      try {
+        const p = join(agentDir, '.claude', 'slot');
+        // 1st validation: a real in-tree dir -> allowed
+        mkdirSync(p, { recursive: true });
+        expect(isClaudeDirOperation('Write',
+          { file_path: join(p, 'f.txt') }, agentDir)).toBe(true);
+        // swap the component for a symlink that escapes (the TOCTOU move)
+        rmSync(p, { recursive: true, force: true });
+        symlinkSync(outside, p);
+        // 2nd validation (what a write-time re-check would do) catches it -> refused.
+        // The function holds no cache; every call re-lstats the live path.
+        expect(isClaudeDirOperation('Write',
+          { file_path: join(p, 'f.txt') }, agentDir)).toBe(false);
+      } finally { rmSync(base, { recursive: true, force: true }); }
+    });
+  });
+
   describe('Permission hook skips ExitPlanMode', () => {
     it('ExitPlanMode should be handled by planmode hook, not permission hook', () => {
       // The permission hook checks tool_name and exits with no output for ExitPlanMode.

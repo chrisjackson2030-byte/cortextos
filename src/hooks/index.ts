@@ -254,7 +254,20 @@ export function isClaudeDirOperation(
   // thing left to vet.
   const canonAgentDir = canonicalizePath(resolve(base));
   const claudeRoot = join(canonAgentDir, '.claude');
-  const target = resolve(canonAgentDir, filePath);
+
+  // Normalize the target's agent-dir PREFIX onto the canonical agent dir. The
+  // defect (#18): an absolute filePath under a symlinked base (e.g. macOS
+  // /tmp -> /private/tmp) kept the raw "/tmp" prefix while claudeRoot was the
+  // canonical "/private/tmp", so target.startsWith(claudeRoot) was false AND
+  // hasSymlinkComponent's prefix check failed — silently bypassing BOTH guards.
+  // We re-root only the prefix; we deliberately do NOT resolve symlinks inside
+  // the .claude subtree (that stays hasSymlinkComponent's job, so a planted
+  // symlink at/below .claude is still rejected — live OR dangling).
+  const rawBase = resolve(base);
+  const rawTarget = resolve(rawBase, filePath);
+  const target = (rawTarget === rawBase || rawTarget.startsWith(rawBase + sep))
+    ? join(canonAgentDir, rawTarget.slice(rawBase.length))
+    : rawTarget;
 
   // Lexical containment within the agent's own .claude/.
   if (target !== claudeRoot && !target.startsWith(claudeRoot + sep)) return false;
