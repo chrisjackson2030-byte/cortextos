@@ -10,7 +10,7 @@ import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTa
 import { saveOutput } from '../bus/save-output.js';
 import { logEvent } from '../bus/event.js';
 import { readLatestOutcomeHeartbeat, writeOutcomeHeartbeat } from '../bus/outcome-hb.js';
-import { completeRun, expireStaleRuns, getRun, getRunByTrace, joinRun, startRun } from '../bus/run-store.js';
+import { completeRun, expireStaleRuns, getRun, getRunByTrace, joinRun, startRun, signEnvelope, envelopePayload } from '../bus/run-store.js';
 import { updateHeartbeat, readAllHeartbeats, isHeartbeatStale } from '../bus/heartbeat.js';
 import { selfRestart, hardRestart, autoCommit, checkGoalStaleness, postActivity } from '../bus/system.js';
 import { createExperiment, runExperiment, evaluateExperiment, listExperiments, gatherContext, manageCycle, loadExperimentConfig } from '../bus/experiment.js';
@@ -712,7 +712,7 @@ busCommand
   .option('--artifacts <items>', 'Comma-separated artifacts')
   .option('--blockers <items>', 'Comma-separated blockers')
   .option('--next-action <text>', 'Next action')
-  .action((
+  .action(async (
     run_id: string,
     run_token: string,
     opts: { status?: string; result?: string; artifacts?: string; blockers?: string; nextAction?: string },
@@ -726,16 +726,67 @@ busCommand
       const items = value.split(',').map((item) => item.trim()).filter(Boolean);
       return items.length > 0 ? items : undefined;
     };
-    const envelope: CompletionEnvelope = {
+    const emitted_at = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+    // Inspect the run row to decide routing (origin) and to detect contract rows.
+    const row = getRun(run_id);
+    const isDaemonOrigin = row?.origin === 'daemon';
+    const isContractRow = !!row && row.run_token === '' ; // contract rows store only a hash
+
+    // Build the envelope. For contract rows the signature MUST be a valid HMAC
+    // over the canonical payload using the raw token (the worker reads
+    // CTX_RUN_TOKEN). For legacy standalone rows, the run-store expects the raw
+    // token in `signature` (back-compat); we preserve that below.
+    const baseEnvelope: CompletionEnvelope = {
       run_id,
       status: opts.status || 'done',
       result: opts.result,
       artifacts: parseCsv(opts.artifacts),
       blockers: parseCsv(opts.blockers),
       next_action: opts.nextAction,
-      signature: run_token,
-      emitted_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      signature: '',
+      emitted_at,
     };
+
+    let envelope: CompletionEnvelope & { run_token?: string };
+    if (isContractRow) {
+      // HMAC-sign with the raw token; carry the raw token for the daemon's
+      // token-hash check. The signature field is the real HMAC, NOT the token.
+      const signature = signEnvelope(run_token, envelopePayload({ ...baseEnvelope }));
+      envelope = { ...baseEnvelope, signature, run_token };
+    } else {
+      // Legacy standalone row: signature = raw token (existing contract).
+      envelope = { ...baseEnvelope, signature: run_token };
+    }
+
+    // Routing: daemon-origin runs MUST complete via daemon IPC (fail CLOSED if
+    // the daemon is unreachable — never a silent direct-store fallback). The
+    // CTX_RUN_ID env is set by the daemon when it spawned this worker.
+    const runIdEnv = process.env.CTX_RUN_ID;
+    if (isDaemonOrigin && runIdEnv) {
+      const instanceId = process.env.CTX_INSTANCE_ID || 'default';
+      const client = new IPCClient(instanceId);
+      try {
+        const resp = await client.send({
+          type: 'complete-run',
+          source: 'cortextos bus complete-run',
+          data: { envelope },
+        });
+        if (!resp.success) {
+          // FAIL CLOSED: do not fall back to a direct store write. The run stays
+          // incomplete; the lease sweep resolves it.
+          console.error(`complete-run via daemon IPC failed: ${resp.error ?? 'unknown'}`);
+          process.exit(1);
+        }
+        console.log(JSON.stringify(resp.data));
+      } catch (err) {
+        console.error(`complete-run IPC error (failing closed): ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // Standalone / test path: direct store completion (back-compat).
     try {
       console.log(JSON.stringify(completeRun(envelope)));
     } catch (err) {

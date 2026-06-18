@@ -114,6 +114,18 @@ export class AgentPTY {
     // (which caused unexpected billing in CC v2.1.51/v2.1.112 on Max plans).
     ptyEnv['CLAUDE_CODE_DISABLE_1M_CONTEXT'] = '1';
 
+    // Completion-contract env injection (FEATURE_COMPLETION_CONTRACT). The
+    // daemon populates env.extraEnv with the contract vars (CTX_RUN_ID /
+    // CTX_RUN_TOKEN / CTX_TRACE_ID / CTX_PARENT_RUN_ID / CTX_LEASE_DEADLINE /
+    // CTX_COMPLETION_SCHEMA_VERSION). It is undefined on the legacy path, so
+    // this is a no-op when the flag is off. The raw run token reaches the worker
+    // ONLY through this process-env channel — never via argv/prompt/logs.
+    if (this.env.extraEnv) {
+      for (const [k, v] of Object.entries(this.env.extraEnv)) {
+        ptyEnv[k] = v;
+      }
+    }
+
     // Add convenience CTX_* aliases used throughout agent templates.
     // CTX_TELEGRAM_CHAT_ID: alias for CHAT_ID from the agent's .env
     if (ptyEnv['CHAT_ID']) {

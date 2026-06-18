@@ -813,6 +813,21 @@ export function completeRun(
   });
 }
 
+/**
+ * Set a run's trace_id IFF it is currently NULL/empty (idempotent, additive).
+ * Used by the daemon contract wiring to self-root a child run's trace to its own
+ * run_id when no parent trace was propagated, so the run is retrievable by trace.
+ * Never overwrites an existing trace. Returns true if a row was updated.
+ */
+export function setRunTraceIfUnset(run_id: string, trace_id: string): boolean {
+  const result = withDb((db) =>
+    db
+      .prepare("UPDATE runs SET trace_id = ? WHERE run_id = ? AND (trace_id IS NULL OR trace_id = '')")
+      .run(trace_id, run_id).changes,
+  );
+  return (result ?? 0) === 1;
+}
+
 export function getRun(run_id: string): RunRecord | null {
   return withDb((db) =>
     toRunRecord(db.prepare('SELECT * FROM runs WHERE run_id = ?').get(run_id) as RawRunRow | undefined),

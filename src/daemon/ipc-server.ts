@@ -9,6 +9,10 @@ import type { ExecutionLogStatusFilter } from '../bus/crons.js';
 import { nextFireFromCron } from './cron-scheduler.js';
 import { parseDurationMs } from '../bus/cron-state.js';
 import { computeHealth, aggregateFleetHealth } from '../utils/cron-health.js';
+import { completeRun, getRun } from '../bus/run-store.js';
+import type { RunRecord, RunRejection } from '../bus/run-store.js';
+import type { CompletionEnvelope } from '../types/index.js';
+import { isFeatureEnabled } from '../utils/feature-flags.js';
 
 const WORKER_NAME_REGEX = /^[a-z0-9_-]+$/;
 
@@ -469,6 +473,78 @@ export function handleRemoveCron(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// complete-run handler — daemon-side completion of a contract run
+// ---------------------------------------------------------------------------
+
+/** Shape of the complete-run IPC payload (envelope + raw token from worker env). */
+export interface CompleteRunPayload {
+  envelope: CompletionEnvelope & { run_token?: string; outcome?: unknown; trace_id?: string | null };
+}
+
+export interface CompleteRunResult {
+  ok: boolean;
+  /** Present on success/idempotent. */
+  record?: RunRecord;
+  /** Present on a validated rejection (token/signature/transition/...). */
+  rejection?: RunRejection;
+  error?: string;
+}
+
+/**
+ * Daemon-side completion handler. The worker's `bus complete-run` routes here
+ * (the CLI dials IPC when CTX_RUN_ID is set AND the run origin is 'daemon').
+ *
+ * Validation is delegated ENTIRELY to the shared run-store completeRun(), which
+ * performs token-hash timingSafeEqual + envelope HMAC verifyEnvelope + the
+ * atomic state-machine CAS (attemptTransition). This handler does NOT duplicate
+ * any of that logic — it only enforces the daemon-origin invariant and shapes
+ * the result. next_action is RECORDED by completeRun but NOT dispatched here
+ * (dispatch is a separate idempotent post-commit step, not yet wired).
+ *
+ * @param payload   the envelope + raw token
+ * @param deps      injectable run-store fns for deterministic testing
+ */
+export function handleCompleteRun(
+  payload: CompleteRunPayload | undefined,
+  deps: {
+    getRun: (id: string) => RunRecord | null;
+    completeRun: (
+      env: CompletionEnvelope & { run_token?: string },
+    ) => RunRecord | RunRejection | null;
+  } = { getRun, completeRun },
+): CompleteRunResult {
+  if (!isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
+    return { ok: false, error: 'FEATURE_COMPLETION_CONTRACT off' };
+  }
+  const envelope = payload?.envelope;
+  if (!envelope || typeof envelope.run_id !== 'string' || !envelope.run_id) {
+    return { ok: false, error: 'complete-run requires an envelope with run_id' };
+  }
+
+  const existing = deps.getRun(envelope.run_id);
+  if (!existing) {
+    return { ok: false, error: `run ${envelope.run_id} not found` };
+  }
+
+  // Daemon-origin runs MUST complete via this validated IPC path. (The CLI only
+  // dials IPC for origin='daemon'; this is belt-and-suspenders so a stray direct
+  // attempt cannot smuggle a standalone-shaped completion onto a daemon run.)
+  // Standalone runs are not handled here — they use the direct CLI path.
+  if (existing.origin !== 'daemon') {
+    return { ok: false, error: `run ${envelope.run_id} is not daemon-origin (origin=${existing.origin})` };
+  }
+
+  const result = deps.completeRun(envelope);
+  if (result === null) {
+    return { ok: false, error: `run ${envelope.run_id} completion failed (db unavailable or row vanished)` };
+  }
+  if ('ok' in result && result.ok === false) {
+    return { ok: false, rejection: result };
+  }
+  return { ok: true, record: result as RunRecord };
+}
+
 /**
  * IPC server for CLI <-> daemon communication.
  * Uses Unix domain socket on macOS/Linux, named pipe on Windows.
@@ -847,6 +923,24 @@ export class IPCServer {
             response = { success: true, data: { ok: true } };
           } else {
             response = { success: false, error: result.error ?? 'remove-cron failed', data: result };
+          }
+          break;
+        }
+
+        case 'complete-run': {
+          const result = handleCompleteRun(
+            request.data as CompleteRunPayload | undefined,
+          );
+          if (result.ok) {
+            response = { success: true, data: result.record };
+          } else {
+            // A validated rejection (token/signature/transition) is reported as a
+            // structured failure — never silently treated as success.
+            response = {
+              success: false,
+              error: result.error ?? (result.rejection ? `rejected: ${result.rejection.reason}` : 'complete-run failed'),
+              data: result.rejection,
+            };
           }
           break;
         }

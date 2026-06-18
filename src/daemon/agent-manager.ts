@@ -16,8 +16,23 @@ import { collectTelegramCommands, registerTelegramCommands } from '../bus/metric
 import { stripControlChars } from '../utils/validate.js';
 import { processMediaMessage } from '../telegram/media.js';
 import { stripBom } from '../utils/strip-bom.js';
+import { isFeatureEnabled } from '../utils/feature-flags.js';
+import { prepareContractRun } from './run-contract.js';
+import { expireStaleRuns } from '../bus/run-store.js';
 
 type LogFn = (msg: string) => void;
+
+/**
+ * Default lease (seconds) for a daemon-spawned contract worker. A fixed lease
+ * with NO renewal (per AMENDMENT DECISION 4 "first canary = fixed lease no
+ * renewal OK"). The lease sweep marks a run 'stalled' once this elapses without
+ * a valid completion. 30 min covers typical worker turns; renewal is a later
+ * phase before any wide rollout.
+ */
+export const WORKER_DEFAULT_LEASE_SECONDS = 30 * 60;
+
+/** Lease-sweep cadence (ms). Spec requires <= 30s. */
+export const LEASE_SWEEP_INTERVAL_MS = 30_000;
 
 /**
  * Manages all agents in a cortextOS instance.
@@ -49,6 +64,13 @@ export class AgentManager {
   // see overlapping registry state). Cleared after discoverAndStart()
   // finishes so the next clean restart starts from a known-good baseline.
   private daemonJustCrashed: boolean = false;
+
+  /**
+   * Lease-sweep timer handle (FEATURE_LEASE_JOIN). A daemon-maintenance timer
+   * (NOT a user cron / prompt / LLM) that calls expireStaleRuns() every
+   * LEASE_SWEEP_INTERVAL_MS. Null when the sweep is not running.
+   */
+  private leaseSweepHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor(instanceId: string, ctxRoot: string, frameworkRoot: string, org: string) {
     this.instanceId = instanceId;
@@ -158,6 +180,60 @@ export class AgentManager {
     // are normal operation and should fire the real BUG-011 alarm if a
     // race ever does leak through PR #11's protection.
     this.clearDaemonCrashMarkers();
+
+    // FEATURE_LEASE_JOIN: start the daemon lease-sweep timer and run one sweep
+    // immediately on startup (per spec: sweep at startup + every <=30s). No-op
+    // when the flag is off. This is a daemon maintenance timer, not a user cron.
+    this.startLeaseSweep();
+  }
+
+  // --- Lease sweep (FEATURE_LEASE_JOIN) ---
+
+  /**
+   * Start the daemon lease-sweep timer. Runs one sweep immediately (covers the
+   * "sweep on boot" + "sweep after system wake" requirement — a wake fires the
+   * next interval tick, and any restart re-runs discoverAndStart -> immediate
+   * sweep). Gated by FEATURE_LEASE_JOIN; no-op when off. Idempotent.
+   */
+  startLeaseSweep(): void {
+    if (!isFeatureEnabled('FEATURE_LEASE_JOIN')) return;
+    if (this.leaseSweepHandle !== null) return; // already running
+    // Immediate sweep on startup.
+    this.runLeaseSweep();
+    this.leaseSweepHandle = setInterval(() => this.runLeaseSweep(), LEASE_SWEEP_INTERVAL_MS);
+    // Do not keep the event loop alive solely for the sweep.
+    if (typeof this.leaseSweepHandle.unref === 'function') this.leaseSweepHandle.unref();
+    console.log('[agent-manager] Lease sweep started (FEATURE_LEASE_JOIN)');
+  }
+
+  /** Stop the lease-sweep timer. */
+  stopLeaseSweep(): void {
+    if (this.leaseSweepHandle !== null) {
+      clearInterval(this.leaseSweepHandle);
+      this.leaseSweepHandle = null;
+    }
+  }
+
+  /**
+   * Run a single lease sweep: expire stale running runs (atomic CAS in the
+   * run-store; one sweeper wins per row). Records the count. Sweep failure is a
+   * traceable incident (logged), never silent. No auto duplicate-spawn, no
+   * auto external-action retry — expiration only marks runs 'stalled' so a
+   * waiting parent joinRun() unblocks STALLED.
+   */
+  runLeaseSweep(): number {
+    if (!isFeatureEnabled('FEATURE_LEASE_JOIN')) return 0;
+    try {
+      const expired = expireStaleRuns();
+      if (expired > 0) {
+        console.log(`[agent-manager] Lease sweep: ${expired} run(s) -> stalled`);
+      }
+      return expired;
+    } catch (err) {
+      // Traceable incident — sweep failure must never be silent.
+      console.error(`[agent-manager] INCIDENT lease-sweep-failed: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    }
   }
 
   /**
@@ -962,6 +1038,9 @@ export class AgentManager {
    * time `pty.kill()` runs, every agent already has its marker on disk.
    */
   async stopAll(): Promise<void> {
+    // Stop the lease-sweep timer on shutdown (no-op if it was never started).
+    this.stopLeaseSweep();
+
     const names = [...this.agents.keys()];
 
     for (const name of names) {
@@ -1055,6 +1134,31 @@ export class AgentManager {
 
     const config = model ? { model } : {};
 
+    // FEATURE_COMPLETION_CONTRACT: mint a run row + scoped token BEFORE spawning,
+    // inject the contract env vars into the worker process env, and append a
+    // machine-generated completion instruction to the task prompt. Flags-off =>
+    // legacy spawn (no run row, no env vars, prompt unchanged). The raw token
+    // lives ONLY in env.extraEnv.CTX_RUN_TOKEN — never argv/prompt/logs/events.
+    let effectivePrompt = prompt;
+    if (isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
+      const prepared = prepareContractRun({
+        parentRunId: parent,
+        // Parent trace is propagated to the child only under FEATURE_TRACE_ID
+        // (handled inside prepareContractRun). The parent's run/trace id is the
+        // parent agent/worker name's trace when available; here we pass none and
+        // let the child self-root unless a trace id is threaded in future.
+        leaseSeconds: WORKER_DEFAULT_LEASE_SECONDS,
+      });
+      if (prepared) {
+        env.extraEnv = { ...prepared.env };
+        // Append (do NOT edit any shared prompt/skill file) the immutable
+        // completion instruction. The raw token is NOT in this text.
+        effectivePrompt = `${prompt}\n${prepared.instruction}`;
+      }
+      // If prepared is null (run-store unavailable), fall through to legacy
+      // spawn — we do NOT block worker creation on the contract DB.
+    }
+
     this.workers.set(name, worker);
 
     worker.onDone((workerName) => {
@@ -1067,7 +1171,7 @@ export class AgentManager {
       }, 30_000); // keep for 30s after exit
     });
 
-    await worker.spawn(env, prompt, config);
+    await worker.spawn(env, effectivePrompt, config);
   }
 
   /**
