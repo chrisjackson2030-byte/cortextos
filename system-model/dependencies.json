@@ -85,10 +85,11 @@
     {"from": "integration.telegram", "to": "agent.jarvis", "type": "permissions"},
     {"from": "watchdog.loop-watchdog", "to": "service.cron-scheduler", "type": "reads"},
     {"from": "watchdog.loop-watchdog", "to": "agent.jarvis", "type": "external_side_effects"},
-    {"from": "watchdog.security-monitor", "to": "service.daemon", "type": "reads"}
+    {"from": "watchdog.security-monitor", "to": "service.daemon", "type": "reads"},
+    {"from": "watchdog.reconciler", "to": "service.cron-scheduler", "type": "reads"},
+    {"from": "watchdog.reconciler", "to": "agent.jarvis", "type": "external_side_effects"}
   ],
   "unresolved_edges_pending_investigation": [
-    "watchdog.reconciler: scope/deps unknown (launchd exit 2 observed)",
     "db.claims: writer hook + path unconfirmed",
     "the ~110 launchd jobs class (launchd.fleet-jobs-registry-note): per-job edges not enumerated"
   ]

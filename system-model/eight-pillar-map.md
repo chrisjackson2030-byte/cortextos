@@ -93,7 +93,7 @@ Generated: 2026-06-18 by jarvis. INITIAL pass. Maps the system across the 8 pill
 - **duplicated_or_overlapping_systems:** Two scheduling planes (daemon cron-scheduler vs ~110 launchd jobs); two liveness watchdogs (loop-watchdog + loop-liveness); config crons != daemon crons (known gotcha).
 - **production_call_paths:** launchd -> daemon -> workers (verified); cron-scheduler -> crons (verified).
 - **tests:** tests/unit/daemon/cron-scheduler.test.ts; lease-join tests; disposable-daemon tests (per ADR-0002).
-- **health_signals:** launchctl list; loop-fire-ledger; system-doctor; ai.jarvis.reconciler (currently exit 2 — needs investigation).
+- **health_signals:** launchctl list; loop-fire-ledger; system-doctor; ai.jarvis.reconciler (exit 2 = drift-fixed by design = HEALTHY; not a failure).
 - **security_boundary:** daemon spawns workers; security-monitor/watchdog overlay.
 - **rollback:** launchctl unload; flags OFF; self-restart / hard-restart.
 - **next_planned_improvement:** automate the nightly reconciliation (registry vs launchd vs daemon-crons vs running-processes vs flags) as PROPOSE-ONLY.

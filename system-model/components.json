@@ -4,11 +4,32 @@
   "generated_by": "jarvis",
   "note": "INITIAL registry for the Jarvis System Model + Change-Impact Gate. Field 'status' is restricted to the lifecycle set: proposed, shadow, active, deprecated, retired, archived, unknown. Components Jarvis cannot fully verify are marked status=unknown per RULES.md rule 8 (no claim-to-understand an unknown component). last_verified_at is the timestamp of the discovery pass that confirmed the record, or null where unverified.",
   "field_spec": [
-    "component_id", "name", "type", "purpose", "owner", "status", "source_code",
-    "runtime_process", "entry_points", "dependencies", "dependents", "data_read",
-    "data_written", "source_of_truth", "schedules", "feature_flags", "permissions",
-    "credentials_used", "external_side_effects", "health_check", "tests", "rollback",
-    "replacement_for", "replaced_by", "decision_record", "last_verified_at"
+    "component_id",
+    "name",
+    "type",
+    "purpose",
+    "owner",
+    "status",
+    "source_code",
+    "runtime_process",
+    "entry_points",
+    "dependencies",
+    "dependents",
+    "data_read",
+    "data_written",
+    "source_of_truth",
+    "schedules",
+    "feature_flags",
+    "permissions",
+    "credentials_used",
+    "external_side_effects",
+    "health_check",
+    "tests",
+    "rollback",
+    "replacement_for",
+    "replaced_by",
+    "decision_record",
+    "last_verified_at"
   ],
   "components": [
     {
@@ -20,24 +41,71 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/jarvis/",
       "runtime_process": "claude-code (via cortextos daemon node-pty interactive terminal)",
-      "entry_points": ["cortextos daemon worker (agent_name=jarvis)", "Telegram fast-checker", "config.json crons"],
-      "dependencies": ["service.daemon", "service.cron-scheduler", "service.fast-checker", "db.runs", "db.sessions"],
-      "dependents": ["agent.nova", "agent.forge", "agent.hermes", "agent.friday", "agent.atlas"],
-      "data_read": ["state/session-context.md", "memory/*.md", "config.json", "feature-flags.json"],
-      "data_written": ["memory/YYYY-MM-DD.md", "state/*", "MEMORY.md (auto-generated boot index)"],
+      "entry_points": [
+        "cortextos daemon worker (agent_name=jarvis)",
+        "Telegram fast-checker",
+        "config.json crons"
+      ],
+      "dependencies": [
+        "service.daemon",
+        "service.cron-scheduler",
+        "service.fast-checker",
+        "db.runs",
+        "db.sessions"
+      ],
+      "dependents": [
+        "agent.nova",
+        "agent.forge",
+        "agent.hermes",
+        "agent.friday",
+        "agent.atlas"
+      ],
+      "data_read": [
+        "state/session-context.md",
+        "memory/*.md",
+        "config.json",
+        "feature-flags.json"
+      ],
+      "data_written": [
+        "memory/YYYY-MM-DD.md",
+        "state/*",
+        "MEMORY.md (auto-generated boot index)"
+      ],
       "source_of_truth": "config.json (model/runtime/crons); state/session-context.md (boot index, regenerated each boot)",
-      "schedules": ["see config.json crons array (24 daemon crons)"],
+      "schedules": [
+        "see config.json crons array (24 daemon crons)"
+      ],
       "feature_flags": [],
-      "permissions": ["full fleet orchestration", "writes other agents' goals.json", "Telegram send", "agent send-message"],
-      "credentials_used": ["BOT_TOKEN (Telegram)", "Claude Max OAuth"],
-      "external_side_effects": ["Telegram messages to B", "Shopify store operations (Quiet Kiln)"],
+      "permissions": [
+        "full fleet orchestration",
+        "writes other agents' goals.json",
+        "Telegram send",
+        "agent send-message"
+      ],
+      "credentials_used": [
+        "BOT_TOKEN (Telegram)",
+        "Claude Max OAuth"
+      ],
+      "external_side_effects": [
+        "Telegram messages to B",
+        "Shopify store operations (Quiet Kiln)"
+      ],
       "health_check": "cortextos bus update-heartbeat; loop-watchdog/loop-liveness launchd jobs",
       "tests": "unknown",
       "rollback": "cortextos stop jarvis; self-restart / hard-restart",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "agent.nova",
@@ -48,24 +116,53 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/nova/",
       "runtime_process": "claude-code, model=claude-sonnet-4-6",
-      "entry_points": ["dispatched via cortextos bus send-message", "ai.nova.nightly-metrics launchd"],
-      "dependencies": ["service.daemon"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["unknown"],
-      "data_written": ["unknown"],
+      "entry_points": [
+        "dispatched via cortextos bus send-message",
+        "ai.nova.nightly-metrics launchd"
+      ],
+      "dependencies": [
+        "service.daemon"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "unknown"
+      ],
       "source_of_truth": "orgs/main/agents/nova/config.json",
-      "schedules": ["ai.nova.nightly-metrics (launchd)"],
+      "schedules": [
+        "ai.nova.nightly-metrics (launchd)"
+      ],
       "feature_flags": [],
-      "permissions": ["analyst/research", "no live-money execution"],
-      "credentials_used": ["Claude Max OAuth"],
-      "external_side_effects": ["none known (research/analysis only)"],
+      "permissions": [
+        "analyst/research",
+        "no live-money execution"
+      ],
+      "credentials_used": [
+        "Claude Max OAuth"
+      ],
+      "external_side_effects": [
+        "none known (research/analysis only)"
+      ],
       "health_check": "fleet heartbeat (read-all-heartbeats)",
       "tests": "unknown",
       "rollback": "cortextos stop nova",
       "replacement_for": "auditor (OpenClaw, decommissioned)",
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "agent.forge",
@@ -76,24 +173,54 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/forge/",
       "runtime_process": "codex-app-server, model=gpt-5.5 (override: claude-code -> codex-app-server, reason codex_cap_cleared @ 2026-06-16T05:21:05Z)",
-      "entry_points": ["dispatched via cortextos bus send-message"],
-      "dependencies": ["service.daemon", "service.codex-fallback"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["unknown"],
-      "data_written": ["unknown"],
+      "entry_points": [
+        "dispatched via cortextos bus send-message"
+      ],
+      "dependencies": [
+        "service.daemon",
+        "service.codex-fallback"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "unknown"
+      ],
       "source_of_truth": "orgs/main/agents/forge/config.json",
-      "schedules": ["ai.jarvis.forge-watchdog cron (config.json) audits Forge"],
+      "schedules": [
+        "ai.jarvis.forge-watchdog cron (config.json) audits Forge"
+      ],
       "feature_flags": [],
-      "permissions": ["code/build", "no live-money execution without B gate"],
-      "credentials_used": ["ChatGPT Plus Codex OAuth", "Claude OAuth (fallback runtime)"],
-      "external_side_effects": ["unknown"],
+      "permissions": [
+        "code/build",
+        "no live-money execution without B gate"
+      ],
+      "credentials_used": [
+        "ChatGPT Plus Codex OAuth",
+        "Claude OAuth (fallback runtime)"
+      ],
+      "external_side_effects": [
+        "unknown"
+      ],
       "health_check": "forge-watchdog cron; fleet heartbeat",
       "tests": "unknown",
       "rollback": "cortextos stop forge; codex-fallback rotation to claude-code",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "agent.hermes",
@@ -104,24 +231,51 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/hermes/",
       "runtime_process": "claude-code, model=claude-sonnet-4-6 (model_prev=gpt-5.4)",
-      "entry_points": ["dispatched via cortextos bus send-message"],
-      "dependencies": ["service.daemon", "service.codex-fallback"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["unknown"],
-      "data_written": ["unknown"],
+      "entry_points": [
+        "dispatched via cortextos bus send-message"
+      ],
+      "dependencies": [
+        "service.daemon",
+        "service.codex-fallback"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "unknown"
+      ],
       "source_of_truth": "orgs/main/agents/hermes/config.json",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["unknown — needs investigation"],
-      "credentials_used": ["Claude OAuth", "ChatGPT Plus Codex OAuth (when on Codex runtime)"],
-      "external_side_effects": ["unknown"],
+      "permissions": [
+        "unknown \u2014 needs investigation"
+      ],
+      "credentials_used": [
+        "Claude OAuth",
+        "ChatGPT Plus Codex OAuth (when on Codex runtime)"
+      ],
+      "external_side_effects": [
+        "unknown"
+      ],
       "health_check": "fleet heartbeat",
       "tests": "unknown",
       "rollback": "cortextos stop hermes",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "agent.friday",
@@ -132,24 +286,49 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/friday/",
       "runtime_process": "claude-code, model=claude-opus-4-8",
-      "entry_points": ["dispatched via cortextos bus send-message"],
-      "dependencies": ["service.daemon"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["unknown"],
-      "data_written": ["unknown"],
+      "entry_points": [
+        "dispatched via cortextos bus send-message"
+      ],
+      "dependencies": [
+        "service.daemon"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "unknown"
+      ],
       "source_of_truth": "orgs/main/agents/friday/config.json",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["unknown — needs investigation"],
-      "credentials_used": ["Claude Max OAuth"],
-      "external_side_effects": ["unknown"],
+      "permissions": [
+        "unknown \u2014 needs investigation"
+      ],
+      "credentials_used": [
+        "Claude Max OAuth"
+      ],
+      "external_side_effects": [
+        "unknown"
+      ],
       "health_check": "fleet heartbeat",
       "tests": "unknown",
       "rollback": "cortextos stop friday",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "agent.atlas",
@@ -160,24 +339,51 @@
       "status": "deprecated",
       "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/atlas/",
       "runtime_process": "claude-code, model=claude-sonnet-4-6 (enabled=false; spawn-on-demand only)",
-      "entry_points": ["spawned on demand for expert-mining"],
-      "dependencies": ["service.daemon"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["unknown"],
-      "data_written": ["unknown"],
+      "entry_points": [
+        "spawned on demand for expert-mining"
+      ],
+      "dependencies": [
+        "service.daemon"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "unknown"
+      ],
       "source_of_truth": "orgs/main/agents/atlas/config.json (enabled=false)",
-      "schedules": ["ai.jarvis.weekly-atlas-scout cron (config.json) drives scan"],
+      "schedules": [
+        "ai.jarvis.weekly-atlas-scout cron (config.json) drives scan"
+      ],
       "feature_flags": [],
-      "permissions": ["research-only; sandbox credential-containment canary applied (Gate H, .sb deny Keychain+securityd)"],
-      "credentials_used": ["Claude OAuth"],
-      "external_side_effects": ["WebSearch/YouTube/GitHub mining when spawned"],
+      "permissions": [
+        "research-only; sandbox credential-containment canary applied (Gate H, .sb deny Keychain+securityd)"
+      ],
+      "credentials_used": [
+        "Claude OAuth"
+      ],
+      "external_side_effects": [
+        "WebSearch/YouTube/GitHub mining when spawned"
+      ],
       "health_check": "n/a while stopped",
       "tests": "unknown",
       "rollback": "leave enabled=false; restore config backup (Gate H reversible)",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "service.daemon",
@@ -188,24 +394,73 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/src/daemon/index.ts (and agent-manager.ts, agent-process.ts, worker-process.ts, ipc-server.ts)",
       "runtime_process": "com.cortextos.daemon (launchd, pid observed 92652)",
-      "entry_points": ["launchd com.cortextos.daemon", "cortextos start/stop CLI"],
-      "dependencies": ["db.runs", "service.cron-scheduler", "service.fast-checker"],
-      "dependents": ["agent.jarvis", "agent.nova", "agent.forge", "agent.hermes", "agent.friday", "agent.atlas"],
-      "data_read": ["config.json (per agent)", "feature-flags.json", ".env"],
-      "data_written": ["db.runs", "logs (stdout/stderr/activity per agent)"],
+      "entry_points": [
+        "launchd com.cortextos.daemon",
+        "cortextos start/stop CLI"
+      ],
+      "dependencies": [
+        "db.runs",
+        "service.cron-scheduler",
+        "service.fast-checker"
+      ],
+      "dependents": [
+        "agent.jarvis",
+        "agent.nova",
+        "agent.forge",
+        "agent.hermes",
+        "agent.friday",
+        "agent.atlas"
+      ],
+      "data_read": [
+        "config.json (per agent)",
+        "feature-flags.json",
+        ".env"
+      ],
+      "data_written": [
+        "db.runs",
+        "logs (stdout/stderr/activity per agent)"
+      ],
       "source_of_truth": "src/daemon/* + per-agent config.json",
-      "schedules": ["hosts the daemon cron-scheduler"],
-      "feature_flags": ["FEATURE_COMPLETION_CONTRACT", "FEATURE_OUTCOME_HB", "FEATURE_LEASE_JOIN", "FEATURE_TRACE_ID"],
-      "permissions": ["spawn/kill agent processes", "full fleet control"],
-      "credentials_used": ["passes BOT_TOKEN / OAuth to workers via env"],
-      "external_side_effects": ["none directly (workers produce side effects)"],
+      "schedules": [
+        "hosts the daemon cron-scheduler"
+      ],
+      "feature_flags": [
+        "FEATURE_COMPLETION_CONTRACT",
+        "FEATURE_OUTCOME_HB",
+        "FEATURE_LEASE_JOIN",
+        "FEATURE_TRACE_ID"
+      ],
+      "permissions": [
+        "spawn/kill agent processes",
+        "full fleet control"
+      ],
+      "credentials_used": [
+        "passes BOT_TOKEN / OAuth to workers via env"
+      ],
+      "external_side_effects": [
+        "none directly (workers produce side effects)"
+      ],
       "health_check": "launchctl list com.cortextos.daemon; ai.cortextos.security-monitor",
       "tests": "tests/unit/daemon/*",
       "rollback": "launchctl unload com.cortextos.daemon.plist; git revert daemon changes",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": "ADR-0002",
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "success (POSIX convention; verified launchctl LastExitStatus)",
+        "1": "error (POSIX convention; not independently verified per-job)"
+      },
+      "last_exit_code": 0,
+      "last_productive_run": "2026-06-18T22:06:00Z",
+      "last_verified_status": "healthy"
     },
     {
       "component_id": "service.cron-scheduler",
@@ -216,24 +471,50 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/src/daemon/cron-scheduler.ts",
       "runtime_process": "hosted inside com.cortextos.daemon",
-      "entry_points": ["daemon boot reconciles crons from config.json"],
-      "dependencies": ["service.daemon", "config.json crons array"],
-      "dependents": ["all config.json daemon crons"],
-      "data_read": ["config.json crons array"],
-      "data_written": ["cron-execution-log / loop-fire-ledger"],
+      "entry_points": [
+        "daemon boot reconciles crons from config.json"
+      ],
+      "dependencies": [
+        "service.daemon",
+        "config.json crons array"
+      ],
+      "dependents": [
+        "all config.json daemon crons"
+      ],
+      "data_read": [
+        "config.json crons array"
+      ],
+      "data_written": [
+        "cron-execution-log / loop-fire-ledger"
+      ],
       "source_of_truth": "config.json crons array (24 crons)",
-      "schedules": ["self (the scheduler)"],
+      "schedules": [
+        "self (the scheduler)"
+      ],
       "feature_flags": [],
-      "permissions": ["fire agent crons"],
+      "permissions": [
+        "fire agent crons"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["triggers cron prompts which may have side effects"],
+      "external_side_effects": [
+        "triggers cron prompts which may have side effects"
+      ],
       "health_check": "ai.jarvis.cron-reconciler + ai.jarvis.loop-watchdog + ai.jarvis.loop-liveness launchd",
       "tests": "tests/unit/daemon/cron-scheduler.test.ts",
       "rollback": "remove cron from config.json; daemon re-reconciles on restart",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "service.fast-checker",
@@ -244,24 +525,54 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos/src/daemon/fast-checker.ts",
       "runtime_process": "hosted inside com.cortextos.daemon",
-      "entry_points": ["Telegram getUpdates polling"],
-      "dependencies": ["service.daemon"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["Telegram API"],
-      "data_written": ["agent inbox / injected messages", "fast-checker.log"],
+      "entry_points": [
+        "Telegram getUpdates polling"
+      ],
+      "dependencies": [
+        "service.daemon"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "Telegram API"
+      ],
+      "data_written": [
+        "agent inbox / injected messages",
+        "fast-checker.log"
+      ],
       "source_of_truth": "Telegram API",
-      "schedules": ["continuous poll"],
+      "schedules": [
+        "continuous poll"
+      ],
       "feature_flags": [],
-      "permissions": ["read Telegram updates", "auto-ack mid-turn"],
-      "credentials_used": ["BOT_TOKEN", "ALLOWED_USER gate"],
-      "external_side_effects": ["sends Telegram acks"],
+      "permissions": [
+        "read Telegram updates",
+        "auto-ack mid-turn"
+      ],
+      "credentials_used": [
+        "BOT_TOKEN",
+        "ALLOWED_USER gate"
+      ],
+      "external_side_effects": [
+        "sends Telegram acks"
+      ],
       "health_check": "fast-checker.log activity",
       "tests": "unknown",
       "rollback": "git revert WS7 fast-path (commit d4930e3)",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "service.run-store",
@@ -272,24 +583,58 @@
       "status": "shadow",
       "source_code": "/Users/chrisjackson/cortextos/src/bus/run-store.ts; src/daemon/run-contract.ts",
       "runtime_process": "in-process (daemon worker + CLI)",
-      "entry_points": ["createRun / startRun / join-run / expire-stale / get-run-by-trace CLI verbs", "worker-process exit handler"],
-      "dependencies": ["db.runs", "lib.better-sqlite3"],
-      "dependents": ["service.daemon (worker lifecycle)"],
-      "data_read": ["db.runs"],
-      "data_written": ["db.runs"],
+      "entry_points": [
+        "createRun / startRun / join-run / expire-stale / get-run-by-trace CLI verbs",
+        "worker-process exit handler"
+      ],
+      "dependencies": [
+        "db.runs",
+        "lib.better-sqlite3"
+      ],
+      "dependents": [
+        "service.daemon (worker lifecycle)"
+      ],
+      "data_read": [
+        "db.runs"
+      ],
+      "data_written": [
+        "db.runs"
+      ],
       "source_of_truth": "db.runs (runs.db)",
-      "schedules": ["lease sweep / expire-stale"],
-      "feature_flags": ["FEATURE_COMPLETION_CONTRACT", "FEATURE_LEASE_JOIN", "FEATURE_TRACE_ID", "FEATURE_OUTCOME_HB"],
-      "permissions": ["read/write runs.db"],
-      "credentials_used": ["run_token (HMAC sign)"],
-      "external_side_effects": ["none"],
+      "schedules": [
+        "lease sweep / expire-stale"
+      ],
+      "feature_flags": [
+        "FEATURE_COMPLETION_CONTRACT",
+        "FEATURE_LEASE_JOIN",
+        "FEATURE_TRACE_ID",
+        "FEATURE_OUTCOME_HB"
+      ],
+      "permissions": [
+        "read/write runs.db"
+      ],
+      "credentials_used": [
+        "run_token (HMAC sign)"
+      ],
+      "external_side_effects": [
+        "none"
+      ],
       "health_check": "canary-tick verbs; daemon canaries",
       "tests": "tests/unit/bus/run-store.test.ts; tests/unit/bus/lease-join.test.ts; tests/unit/bus/outcome-hb.test.ts",
       "rollback": "set all flags false (legacy: code 0 = completed); git revert 6b3f552/827f051",
       "replacement_for": "implicit process-exit-as-completion (legacy)",
       "replaced_by": null,
       "decision_record": "ADR-0002",
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "service.codex-fallback",
@@ -300,24 +645,59 @@
       "status": "active",
       "source_code": "/Users/chrisjackson/cortextos-data/scripts/codex-fallback.sh (path per memory; not re-verified this pass)",
       "runtime_process": "ai.jarvis.codex-fallback (launchd)",
-      "entry_points": ["launchd schedule", "codex-account-health prober"],
-      "dependencies": ["agent.forge", "agent.hermes"],
-      "dependents": ["agent.forge", "agent.hermes"],
-      "data_read": ["Codex account health"],
-      "data_written": ["per-agent config.json runtime override stamp"],
+      "entry_points": [
+        "launchd schedule",
+        "codex-account-health prober"
+      ],
+      "dependencies": [
+        "agent.forge",
+        "agent.hermes"
+      ],
+      "dependents": [
+        "agent.forge",
+        "agent.hermes"
+      ],
+      "data_read": [
+        "Codex account health"
+      ],
+      "data_written": [
+        "per-agent config.json runtime override stamp"
+      ],
       "source_of_truth": "per-agent config.json runtime field + override stamp",
-      "schedules": ["ai.jarvis.codex-fallback (launchd)"],
+      "schedules": [
+        "ai.jarvis.codex-fallback (launchd)"
+      ],
       "feature_flags": [],
-      "permissions": ["rewrite agent config.json runtime/model"],
-      "credentials_used": ["ChatGPT Plus Codex OAuth (health probe)"],
-      "external_side_effects": ["none external; mutates fleet runtime"],
+      "permissions": [
+        "rewrite agent config.json runtime/model"
+      ],
+      "credentials_used": [
+        "ChatGPT Plus Codex OAuth (health probe)"
+      ],
+      "external_side_effects": [
+        "none external; mutates fleet runtime"
+      ],
       "health_check": "ai.codex.status-gauge; codex-account-health prober",
       "tests": "unknown",
       "rollback": "manual config.json restore",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "success (POSIX convention; verified launchctl LastExitStatus)",
+        "1": "error (POSIX convention; not independently verified per-job)"
+      },
+      "last_exit_code": 0,
+      "last_productive_run": "2026-06-18T22:06:00Z",
+      "last_verified_status": "healthy"
     },
     {
       "component_id": "watchdog.loop-watchdog",
@@ -328,52 +708,117 @@
       "status": "active",
       "source_code": "unknown (launchd-driven script; plist at ~/Library/LaunchAgents/ai.jarvis.loop-watchdog.plist)",
       "runtime_process": "ai.jarvis.loop-watchdog (launchd)",
-      "entry_points": ["launchd schedule"],
-      "dependencies": ["service.cron-scheduler"],
-      "dependents": ["agent.jarvis (alerts)"],
-      "data_read": ["loop-fire-ledger / cron execution log"],
-      "data_written": ["alerts"],
+      "entry_points": [
+        "launchd schedule"
+      ],
+      "dependencies": [
+        "service.cron-scheduler"
+      ],
+      "dependents": [
+        "agent.jarvis (alerts)"
+      ],
+      "data_read": [
+        "loop-fire-ledger / cron execution log"
+      ],
+      "data_written": [
+        "alerts"
+      ],
       "source_of_truth": "unknown",
-      "schedules": ["launchd interval (unknown exact)"],
+      "schedules": [
+        "launchd interval (unknown exact)"
+      ],
       "feature_flags": [],
-      "permissions": ["read ledger; alert"],
+      "permissions": [
+        "read ledger; alert"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["Telegram alert on stall"],
+      "external_side_effects": [
+        "Telegram alert on stall"
+      ],
       "health_check": "launchctl list ai.jarvis.loop-watchdog",
       "tests": "unknown",
       "rollback": "launchctl unload plist",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "success (POSIX convention; verified launchctl LastExitStatus)",
+        "1": "error (POSIX convention; not independently verified per-job)"
+      },
+      "last_exit_code": 0,
+      "last_productive_run": "2026-06-18T22:06:00Z",
+      "last_verified_status": "healthy"
     },
     {
       "component_id": "watchdog.reconciler",
       "name": "ai.jarvis.reconciler",
       "type": "watchdog",
-      "purpose": "Reconciliation job (exit status 2 observed). Exact scope unverified this pass.",
+      "purpose": "Desired-state reconciler (K8s-style level-triggered control loop). Reads desired-state.json (never writes it), diffs desired-vs-actual fleet state, acts per the action matrix (kickstart lanes, re-register crons, surface other drift). Exits 2 by DESIGN when drift was detected and at least one action was taken \u2014 that is success-with-action, NOT a failure. The earlier exit-2 'failing' read was a misclassification (INC-2026-06-18).",
       "owner": "jarvis",
-      "status": "unknown",
-      "source_code": "unknown (plist ~/Library/LaunchAgents/ai.jarvis.reconciler.plist)",
-      "runtime_process": "ai.jarvis.reconciler (launchd, last exit 2)",
-      "entry_points": ["launchd schedule"],
-      "dependencies": ["unknown"],
-      "dependents": ["unknown"],
-      "data_read": ["unknown"],
-      "data_written": ["unknown"],
-      "source_of_truth": "unknown",
-      "schedules": ["launchd interval (unknown)"],
+      "status": "active",
+      "source_code": "/Users/chrisjackson/cortextos-data/tools/desired-state-reconciler.py",
+      "runtime_process": "ai.jarvis.reconciler (launchd; last exit 2 = drift-fixed, healthy)",
+      "entry_points": [
+        "launchd ai.jarvis.reconciler (StartInterval 300s, RunAtLoad)"
+      ],
+      "dependencies": [
+        "unknown"
+      ],
+      "dependents": [
+        "unknown"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "unknown"
+      ],
+      "source_of_truth": "~/cortextos/orgs/main/desired-state.json (read-only input)",
+      "schedules": [
+        "launchd StartInterval 300s (ai.jarvis.reconciler.plist)"
+      ],
       "feature_flags": [],
-      "permissions": ["unknown"],
-      "credentials_used": ["unknown"],
-      "external_side_effects": ["unknown"],
-      "health_check": "launchctl list ai.jarvis.reconciler (currently exit 2 — needs investigation)",
+      "permissions": [
+        "unknown"
+      ],
+      "credentials_used": [
+        "unknown"
+      ],
+      "external_side_effects": [
+        "unknown"
+      ],
+      "health_check": "launchctl list ai.jarvis.reconciler (LastExitStatus 512 = exit 2 = drift-fixed = HEALTHY); ~/.cortextos/logs/reconciler.err.log size 0 = no error; out.log tail shows \"[reconciler] exit=2 (drift-fixed)\"",
       "tests": "unknown",
-      "rollback": "launchctl unload plist",
+      "rollback": "launchctl bootout gui/$UID ~/Library/LaunchAgents/ai.jarvis.reconciler.plist",
       "replacement_for": null,
       "replaced_by": null,
-      "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "decision_record": "architecture/decisions/ADR-0004-exit-code-contract-hardening.md",
+      "last_verified_at": "2026-06-18T22:06:00Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [
+        2
+      ],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "clean",
+        "1": "error",
+        "2": "drift-fixed"
+      },
+      "last_exit_code": 2,
+      "last_productive_run": "2026-06-18T18:06:00-04:00",
+      "last_verified_status": "healthy"
     },
     {
       "component_id": "watchdog.security-monitor",
@@ -384,24 +829,56 @@
       "status": "active",
       "source_code": "unknown (plists ~/Library/LaunchAgents/ai.cortextos.security-monitor.plist, security-watchdog.plist)",
       "runtime_process": "ai.cortextos.security-monitor + ai.cortextos.security-watchdog (launchd)",
-      "entry_points": ["launchd schedule"],
-      "dependencies": ["service.daemon"],
-      "dependents": ["agent.jarvis (alerts)"],
-      "data_read": ["unknown"],
-      "data_written": ["security alerts"],
+      "entry_points": [
+        "launchd schedule"
+      ],
+      "dependencies": [
+        "service.daemon"
+      ],
+      "dependents": [
+        "agent.jarvis (alerts)"
+      ],
+      "data_read": [
+        "unknown"
+      ],
+      "data_written": [
+        "security alerts"
+      ],
       "source_of_truth": "unknown",
-      "schedules": ["launchd interval (unknown)"],
+      "schedules": [
+        "launchd interval (unknown)"
+      ],
       "feature_flags": [],
-      "permissions": ["unknown"],
-      "credentials_used": ["unknown"],
-      "external_side_effects": ["alerts"],
+      "permissions": [
+        "unknown"
+      ],
+      "credentials_used": [
+        "unknown"
+      ],
+      "external_side_effects": [
+        "alerts"
+      ],
       "health_check": "launchctl list",
       "tests": "unknown",
       "rollback": "launchctl unload plist",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "success (POSIX convention; verified launchctl LastExitStatus)",
+        "1": "error (POSIX convention; not independently verified per-job)"
+      },
+      "last_exit_code": 0,
+      "last_productive_run": "2026-06-18T22:06:00Z",
+      "last_verified_status": "healthy"
     },
     {
       "component_id": "db.runs",
@@ -412,17 +889,35 @@
       "status": "shadow",
       "source_code": "schema in src/bus/run-store.ts (RUNS_SCHEMA)",
       "runtime_process": "SQLite WAL (better-sqlite3)",
-      "entry_points": ["run-store.ts via daemon worker + CLI verbs"],
-      "dependencies": ["lib.better-sqlite3"],
-      "dependents": ["service.run-store", "service.daemon"],
-      "data_read": ["service.run-store"],
-      "data_written": ["service.run-store (daemon + CLI writer)"],
+      "entry_points": [
+        "run-store.ts via daemon worker + CLI verbs"
+      ],
+      "dependencies": [
+        "lib.better-sqlite3"
+      ],
+      "dependents": [
+        "service.run-store",
+        "service.daemon"
+      ],
+      "data_read": [
+        "service.run-store"
+      ],
+      "data_written": [
+        "service.run-store (daemon + CLI writer)"
+      ],
       "source_of_truth": "self (canonical run lifecycle state)",
       "schedules": [],
-      "feature_flags": ["FEATURE_COMPLETION_CONTRACT", "FEATURE_LEASE_JOIN"],
-      "permissions": ["daemon + CLI read/write"],
+      "feature_flags": [
+        "FEATURE_COMPLETION_CONTRACT",
+        "FEATURE_LEASE_JOIN"
+      ],
+      "permissions": [
+        "daemon + CLI read/write"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["none"],
+      "external_side_effects": [
+        "none"
+      ],
       "health_check": "run-store tests; WAL integrity",
       "tests": "tests/unit/bus/run-store.test.ts",
       "rollback": "flags off; DB unused under legacy path",
@@ -441,17 +936,33 @@
       "status": "active",
       "source_code": "src/bus/indexer*.ts",
       "runtime_process": "SQLite (better-sqlite3); indexer writer",
-      "entry_points": ["indexer (ai.jarvis.ingestion-engine / indexer)"],
-      "dependencies": ["lib.better-sqlite3"],
-      "dependents": ["memory recall / boot index"],
-      "data_read": ["indexer queries"],
-      "data_written": ["indexer (writer)"],
+      "entry_points": [
+        "indexer (ai.jarvis.ingestion-engine / indexer)"
+      ],
+      "dependencies": [
+        "lib.better-sqlite3"
+      ],
+      "dependents": [
+        "memory recall / boot index"
+      ],
+      "data_read": [
+        "indexer queries"
+      ],
+      "data_written": [
+        "indexer (writer)"
+      ],
       "source_of_truth": "self (session index)",
-      "schedules": ["indexer runs (ai.jarvis.ingestion-engine observed running)"],
+      "schedules": [
+        "indexer runs (ai.jarvis.ingestion-engine observed running)"
+      ],
       "feature_flags": [],
-      "permissions": ["indexer read/write"],
+      "permissions": [
+        "indexer read/write"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["none"],
+      "external_side_effects": [
+        "none"
+      ],
       "health_check": "indexer freshness",
       "tests": "unknown",
       "rollback": "rebuild index from transcripts",
@@ -470,17 +981,31 @@
       "status": "unknown",
       "source_code": "src/bus/hooks.ts (likely; not confirmed)",
       "runtime_process": "SQLite (better-sqlite3); hooks writer",
-      "entry_points": ["hooks"],
-      "dependencies": ["lib.better-sqlite3"],
-      "dependents": ["unknown"],
-      "data_read": ["hooks"],
-      "data_written": ["hooks"],
+      "entry_points": [
+        "hooks"
+      ],
+      "dependencies": [
+        "lib.better-sqlite3"
+      ],
+      "dependents": [
+        "unknown"
+      ],
+      "data_read": [
+        "hooks"
+      ],
+      "data_written": [
+        "hooks"
+      ],
       "source_of_truth": "self",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["hooks read/write"],
+      "permissions": [
+        "hooks read/write"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["none"],
+      "external_side_effects": [
+        "none"
+      ],
       "health_check": "unknown",
       "tests": "unknown",
       "rollback": "unknown",
@@ -499,17 +1024,31 @@
       "status": "active",
       "source_code": "src/bus/hooks.ts (likely)",
       "runtime_process": "SQLite (better-sqlite3); hooks writer",
-      "entry_points": ["hooks"],
-      "dependencies": ["lib.better-sqlite3"],
-      "dependents": ["unknown"],
-      "data_read": ["hooks"],
-      "data_written": ["hooks"],
+      "entry_points": [
+        "hooks"
+      ],
+      "dependencies": [
+        "lib.better-sqlite3"
+      ],
+      "dependents": [
+        "unknown"
+      ],
+      "data_read": [
+        "hooks"
+      ],
+      "data_written": [
+        "hooks"
+      ],
       "source_of_truth": "self",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["hooks read/write"],
+      "permissions": [
+        "hooks read/write"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["none"],
+      "external_side_effects": [
+        "none"
+      ],
       "health_check": "unknown",
       "tests": "unknown",
       "rollback": "unknown",
@@ -528,17 +1067,32 @@
       "status": "active",
       "source_code": "discordbot (external to cortextos src)",
       "runtime_process": "SQLite; discordbot writer, hook reader",
-      "entry_points": ["discordbot writes; hook-compact-telegram reads"],
-      "dependencies": ["lib.better-sqlite3"],
-      "dependents": ["hook-compact-telegram (read-only)", "trading.alpaca-options"],
-      "data_read": ["hook-compact-telegram (read-only)"],
-      "data_written": ["discordbot options bot"],
+      "entry_points": [
+        "discordbot writes; hook-compact-telegram reads"
+      ],
+      "dependencies": [
+        "lib.better-sqlite3"
+      ],
+      "dependents": [
+        "hook-compact-telegram (read-only)",
+        "trading.alpaca-options"
+      ],
+      "data_read": [
+        "hook-compact-telegram (read-only)"
+      ],
+      "data_written": [
+        "discordbot options bot"
+      ],
       "source_of_truth": "self (halt state); broker is truth for P&L",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["discordbot write; hook read-only"],
+      "permissions": [
+        "discordbot write; hook read-only"
+      ],
       "credentials_used": [],
-      "external_side_effects": ["gates live options trading (KILL_SWITCH)"],
+      "external_side_effects": [
+        "gates live options trading (KILL_SWITCH)"
+      ],
       "health_check": "ai.discordbot.deadman / options-health launchd",
       "tests": "unknown",
       "rollback": "n/a (external bot state)",
@@ -557,11 +1111,23 @@
       "status": "shadow",
       "source_code": "node_modules/better-sqlite3 (package.json dependency)",
       "runtime_process": "in-process native addon",
-      "entry_points": ["import Database from 'better-sqlite3'"],
+      "entry_points": [
+        "import Database from 'better-sqlite3'"
+      ],
       "dependencies": [],
-      "dependents": ["db.runs", "db.sessions", "db.claims", "db.source_log", "db.halt_state"],
-      "data_read": ["all SQLite dbs"],
-      "data_written": ["all SQLite dbs"],
+      "dependents": [
+        "db.runs",
+        "db.sessions",
+        "db.claims",
+        "db.source_log",
+        "db.halt_state"
+      ],
+      "data_read": [
+        "all SQLite dbs"
+      ],
+      "data_written": [
+        "all SQLite dbs"
+      ],
       "source_of_truth": "package.json dependency pin",
       "schedules": [],
       "feature_flags": [],
@@ -585,17 +1151,35 @@
       "status": "deprecated",
       "source_code": "unknown (bot lane; not in cortextos src)",
       "runtime_process": "ai.sentinel.kalshi-paper, ai.sentinel.paper-forward-test (launchd, paper-only)",
-      "entry_points": ["paper lanes (launchd)"],
-      "dependencies": ["Kalshi API"],
+      "entry_points": [
+        "paper lanes (launchd)"
+      ],
+      "dependencies": [
+        "Kalshi API"
+      ],
       "dependents": [],
-      "data_read": ["Kalshi market data"],
-      "data_written": ["paper trade ledger", "Kalshi settlements DB"],
+      "data_read": [
+        "Kalshi market data"
+      ],
+      "data_written": [
+        "paper trade ledger",
+        "Kalshi settlements DB"
+      ],
       "source_of_truth": "REAL Kalshi account/settlements (never the bot's own DB)",
-      "schedules": ["ai.sentinel.kalshi-paper", "ai.sentinel.paper-forward-test"],
+      "schedules": [
+        "ai.sentinel.kalshi-paper",
+        "ai.sentinel.paper-forward-test"
+      ],
       "feature_flags": [],
-      "permissions": ["paper-only (real-money FROZEN)"],
-      "credentials_used": ["Kalshi API key (Keychain)"],
-      "external_side_effects": ["NONE live (frozen); paper only"],
+      "permissions": [
+        "paper-only (real-money FROZEN)"
+      ],
+      "credentials_used": [
+        "Kalshi API key (Keychain)"
+      ],
+      "external_side_effects": [
+        "NONE live (frozen); paper only"
+      ],
       "health_check": "paper-integrity launchd",
       "tests": "funnel_v2 forward-validation",
       "rollback": "stays frozen",
@@ -609,22 +1193,41 @@
       "component_id": "trading.alpaca-options",
       "name": "Alpaca options bot (Discord)",
       "type": "revenue_lane",
-      "purpose": "Live options trading bot driven via Discord. SEPARATE system from Kalshi. KILL_SWITCH ARMED. Bot's positions.db UNDER-RECORDS — broker is truth.",
+      "purpose": "Live options trading bot driven via Discord. SEPARATE system from Kalshi. KILL_SWITCH ARMED. Bot's positions.db UNDER-RECORDS \u2014 broker is truth.",
       "owner": "discordbot",
       "status": "deprecated",
       "source_code": "discordbot workspace (external to cortextos src)",
       "runtime_process": "ai.discordbot.agent (launchd, pid 85329)",
-      "entry_points": ["Discord bot agent"],
-      "dependencies": ["db.halt_state", "Alpaca broker API"],
+      "entry_points": [
+        "Discord bot agent"
+      ],
+      "dependencies": [
+        "db.halt_state",
+        "Alpaca broker API"
+      ],
       "dependents": [],
-      "data_read": ["Alpaca /v2/account, /v2/positions", "db.halt_state"],
-      "data_written": ["positions.db (under-records)", "intent-ledger.db"],
-      "source_of_truth": "REAL Alpaca live broker (/v2/account, /v2/positions) — never positions.db",
-      "schedules": ["ai.discordbot.* (maker-forward, deadman, options-health, etc)"],
+      "data_read": [
+        "Alpaca /v2/account, /v2/positions",
+        "db.halt_state"
+      ],
+      "data_written": [
+        "positions.db (under-records)",
+        "intent-ledger.db"
+      ],
+      "source_of_truth": "REAL Alpaca live broker (/v2/account, /v2/positions) \u2014 never positions.db",
+      "schedules": [
+        "ai.discordbot.* (maker-forward, deadman, options-health, etc)"
+      ],
       "feature_flags": [],
-      "permissions": ["live broker orders (KILL_SWITCH gated)"],
-      "credentials_used": ["Alpaca live API key (Keychain)"],
-      "external_side_effects": ["live options orders (currently KILL_SWITCH ARMED)"],
+      "permissions": [
+        "live broker orders (KILL_SWITCH gated)"
+      ],
+      "credentials_used": [
+        "Alpaca live API key (Keychain)"
+      ],
+      "external_side_effects": [
+        "live options orders (currently KILL_SWITCH ARMED)"
+      ],
       "health_check": "ai.discordbot.deadman, ai.discordbot.options-health",
       "tests": "unknown",
       "rollback": "KILL_SWITCH (already armed)",
@@ -643,17 +1246,39 @@
       "status": "shadow",
       "source_code": "unknown (bot lane; not in cortextos src)",
       "runtime_process": "ai.topstep.bot, ai.topstep.shadow-feed (launchd)",
-      "entry_points": ["ai.topstep.bot (launchd)"],
-      "dependencies": ["Topstep platform", "futures data feeds"],
+      "entry_points": [
+        "ai.topstep.bot (launchd)"
+      ],
+      "dependencies": [
+        "Topstep platform",
+        "futures data feeds"
+      ],
       "dependents": [],
-      "data_read": ["futures market data", "Topstep account"],
-      "data_written": ["topstep analytics / shadow ledger"],
+      "data_read": [
+        "futures market data",
+        "Topstep account"
+      ],
+      "data_written": [
+        "topstep analytics / shadow ledger"
+      ],
       "source_of_truth": "REAL Topstep account (not bot DB)",
-      "schedules": ["ai.topstep.bot", "ai.topstep.shadow-feed", "ai.jarvis.topstep-open-monitor", "ai.jarvis.topstep-analytics", "ai.jarvis.topstep-notifier"],
+      "schedules": [
+        "ai.topstep.bot",
+        "ai.topstep.shadow-feed",
+        "ai.jarvis.topstep-open-monitor",
+        "ai.jarvis.topstep-analytics",
+        "ai.jarvis.topstep-notifier"
+      ],
       "feature_flags": [],
-      "permissions": ["shadow/paper (live-money gated)"],
-      "credentials_used": ["Topstep credentials (unknown storage — needs verification)"],
-      "external_side_effects": ["unknown — needs verification whether any live orders fire"],
+      "permissions": [
+        "shadow/paper (live-money gated)"
+      ],
+      "credentials_used": [
+        "Topstep credentials (unknown storage \u2014 needs verification)"
+      ],
+      "external_side_effects": [
+        "unknown \u2014 needs verification whether any live orders fire"
+      ],
       "health_check": "ai.topstep.* launchd jobs",
       "tests": "unknown",
       "rollback": "stop ai.topstep.bot",
@@ -664,24 +1289,44 @@
     },
     {
       "component_id": "revenue.shopify-quiet-kiln",
-      "name": "Shopify — Quiet Kiln",
+      "name": "Shopify \u2014 Quiet Kiln",
       "type": "revenue_lane",
       "purpose": "Jarvis-owned Shopify store (Quiet Kiln, store eudvn4-c0, Walt Hollis potter, incense burner $27.99, LIVE, organic TikTok+YT).",
       "owner": "jarvis",
       "status": "active",
       "source_code": "shopify-operator cron prompt + ~/cortextos-data assets",
       "runtime_process": "config.json cron 'shopify-operator' (3h) + ai.jarvis.l1-shopify-runner + ai.jarvis.shopify-token-refresh (launchd)",
-      "entry_points": ["shopify-operator cron", "l1-shopify-runner launchd"],
-      "dependencies": ["Shopify Admin API"],
+      "entry_points": [
+        "shopify-operator cron",
+        "l1-shopify-runner launchd"
+      ],
+      "dependencies": [
+        "Shopify Admin API"
+      ],
       "dependents": [],
-      "data_read": ["Shopify store data"],
-      "data_written": ["Shopify products/listings/content"],
+      "data_read": [
+        "Shopify store data"
+      ],
+      "data_written": [
+        "Shopify products/listings/content"
+      ],
       "source_of_truth": "Shopify Admin (store eudvn4-c0)",
-      "schedules": ["shopify-operator (3h cron)", "ai.jarvis.l1-shopify-runner", "ai.jarvis.shopify-token-refresh"],
+      "schedules": [
+        "shopify-operator (3h cron)",
+        "ai.jarvis.l1-shopify-runner",
+        "ai.jarvis.shopify-token-refresh"
+      ],
       "feature_flags": [],
-      "permissions": ["Shopify Admin write (Jarvis OWNS — execute + report-after)"],
-      "credentials_used": ["Shopify Admin token (refreshed by shopify-token-refresh)"],
-      "external_side_effects": ["live store edits", "organic social posts"],
+      "permissions": [
+        "Shopify Admin write (Jarvis OWNS \u2014 execute + report-after)"
+      ],
+      "credentials_used": [
+        "Shopify Admin token (refreshed by shopify-token-refresh)"
+      ],
+      "external_side_effects": [
+        "live store edits",
+        "organic social posts"
+      ],
       "health_check": "shopify-token-refresh; operator cron output",
       "tests": "unknown",
       "rollback": "revert listing/content changes in Shopify Admin",
@@ -692,24 +1337,38 @@
     },
     {
       "component_id": "revenue.fiverr-edge-audit",
-      "name": "Fiverr — edge-audit service",
+      "name": "Fiverr \u2014 edge-audit service",
       "type": "revenue_lane",
       "purpose": "Packaged edge-audit service offering on Fiverr (packaged 2026-06-13). Part of the $10K-by-August online revenue tracks.",
       "owner": "jarvis",
       "status": "proposed",
       "source_code": "unknown (service package assets)",
       "runtime_process": "n/a (manual/marketplace listing)",
-      "entry_points": ["Fiverr gig listing"],
-      "dependencies": ["Fiverr account"],
+      "entry_points": [
+        "Fiverr gig listing"
+      ],
+      "dependencies": [
+        "Fiverr account"
+      ],
       "dependents": [],
-      "data_read": ["Fiverr orders"],
-      "data_written": ["Fiverr deliverables"],
+      "data_read": [
+        "Fiverr orders"
+      ],
+      "data_written": [
+        "Fiverr deliverables"
+      ],
       "source_of_truth": "Fiverr account",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["Fiverr account ops"],
-      "credentials_used": ["Fiverr login (unknown storage)"],
-      "external_side_effects": ["public Fiverr listing; customer deliverables"],
+      "permissions": [
+        "Fiverr account ops"
+      ],
+      "credentials_used": [
+        "Fiverr login (unknown storage)"
+      ],
+      "external_side_effects": [
+        "public Fiverr listing; customer deliverables"
+      ],
       "health_check": "unknown",
       "tests": "n/a",
       "rollback": "unpause/pause gig",
@@ -727,10 +1386,19 @@
       "status": "shadow",
       "source_code": "src/utils/feature-flags.ts (reader); call sites in run-store/run-contract",
       "runtime_process": "n/a (config flag)",
-      "entry_points": ["isFeatureEnabled('FEATURE_TRACE_ID')"],
-      "dependencies": ["service.run-store"],
-      "dependents": ["service.run-store", "service.daemon"],
-      "data_read": ["feature-flags.json"],
+      "entry_points": [
+        "isFeatureEnabled('FEATURE_TRACE_ID')"
+      ],
+      "dependencies": [
+        "service.run-store"
+      ],
+      "dependents": [
+        "service.run-store",
+        "service.daemon"
+      ],
+      "data_read": [
+        "feature-flags.json"
+      ],
       "data_written": [],
       "source_of_truth": "state/jarvis-core/feature-flags.json",
       "schedules": [],
@@ -756,10 +1424,18 @@
       "status": "shadow",
       "source_code": "src/bus/outcome-hb.ts; src/daemon/run-contract.ts",
       "runtime_process": "n/a (config flag)",
-      "entry_points": ["isFeatureEnabled('FEATURE_OUTCOME_HB')"],
-      "dependencies": ["service.run-store"],
-      "dependents": ["service.daemon (worker exit handler)"],
-      "data_read": ["feature-flags.json"],
+      "entry_points": [
+        "isFeatureEnabled('FEATURE_OUTCOME_HB')"
+      ],
+      "dependencies": [
+        "service.run-store"
+      ],
+      "dependents": [
+        "service.daemon (worker exit handler)"
+      ],
+      "data_read": [
+        "feature-flags.json"
+      ],
       "data_written": [],
       "source_of_truth": "state/jarvis-core/feature-flags.json",
       "schedules": [],
@@ -785,10 +1461,18 @@
       "status": "proposed",
       "source_code": "unknown (call sites not located this pass)",
       "runtime_process": "n/a (config flag)",
-      "entry_points": ["isFeatureEnabled('FEATURE_DOCTOR_GOODPUT')"],
-      "dependencies": ["unknown"],
-      "dependents": ["ai.jarvis.system-doctor (likely)"],
-      "data_read": ["feature-flags.json"],
+      "entry_points": [
+        "isFeatureEnabled('FEATURE_DOCTOR_GOODPUT')"
+      ],
+      "dependencies": [
+        "unknown"
+      ],
+      "dependents": [
+        "ai.jarvis.system-doctor (likely)"
+      ],
+      "data_read": [
+        "feature-flags.json"
+      ],
       "data_written": [],
       "source_of_truth": "state/jarvis-core/feature-flags.json",
       "schedules": [],
@@ -814,16 +1498,30 @@
       "status": "shadow",
       "source_code": "src/bus/run-store.ts; src/daemon/run-contract.ts; src/daemon/worker-process.ts",
       "runtime_process": "n/a (config flag)",
-      "entry_points": ["isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')"],
-      "dependencies": ["service.run-store", "db.runs"],
-      "dependents": ["service.daemon (worker exit handler)"],
-      "data_read": ["feature-flags.json", "db.runs"],
-      "data_written": ["db.runs"],
+      "entry_points": [
+        "isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')"
+      ],
+      "dependencies": [
+        "service.run-store",
+        "db.runs"
+      ],
+      "dependents": [
+        "service.daemon (worker exit handler)"
+      ],
+      "data_read": [
+        "feature-flags.json",
+        "db.runs"
+      ],
+      "data_written": [
+        "db.runs"
+      ],
       "source_of_truth": "state/jarvis-core/feature-flags.json",
       "schedules": [],
       "feature_flags": [],
       "permissions": [],
-      "credentials_used": ["run_token sign"],
+      "credentials_used": [
+        "run_token sign"
+      ],
       "external_side_effects": [],
       "health_check": "daemon canaries; disposable-daemon tests",
       "tests": "tests/unit/bus/run-store.test.ts",
@@ -843,13 +1541,27 @@
       "status": "shadow",
       "source_code": "src/bus/run-store.ts (lease_deadline, join-run, expire-stale)",
       "runtime_process": "n/a (config flag)",
-      "entry_points": ["isFeatureEnabled('FEATURE_LEASE_JOIN')"],
-      "dependencies": ["service.run-store", "db.runs"],
-      "dependents": ["service.daemon"],
-      "data_read": ["feature-flags.json", "db.runs"],
-      "data_written": ["db.runs (lease_deadline)"],
+      "entry_points": [
+        "isFeatureEnabled('FEATURE_LEASE_JOIN')"
+      ],
+      "dependencies": [
+        "service.run-store",
+        "db.runs"
+      ],
+      "dependents": [
+        "service.daemon"
+      ],
+      "data_read": [
+        "feature-flags.json",
+        "db.runs"
+      ],
+      "data_written": [
+        "db.runs (lease_deadline)"
+      ],
       "source_of_truth": "state/jarvis-core/feature-flags.json",
-      "schedules": ["lease sweep / expire-stale"],
+      "schedules": [
+        "lease sweep / expire-stale"
+      ],
       "feature_flags": [],
       "permissions": [],
       "credentials_used": [],
@@ -872,15 +1584,25 @@
       "status": "shadow",
       "source_code": "unknown (Gate H .sb profiles; atlas config)",
       "runtime_process": "n/a (config flag)",
-      "entry_points": ["isFeatureEnabled('FEATURE_SANDBOX_CANARY')"],
-      "dependencies": ["agent.atlas"],
-      "dependents": ["agent.atlas"],
-      "data_read": ["feature-flags.json"],
+      "entry_points": [
+        "isFeatureEnabled('FEATURE_SANDBOX_CANARY')"
+      ],
+      "dependencies": [
+        "agent.atlas"
+      ],
+      "dependents": [
+        "agent.atlas"
+      ],
+      "data_read": [
+        "feature-flags.json"
+      ],
       "data_written": [],
       "source_of_truth": "state/jarvis-core/feature-flags.json",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["deny Keychain+securityd to canary agent"],
+      "permissions": [
+        "deny Keychain+securityd to canary agent"
+      ],
       "credentials_used": [],
       "external_side_effects": [],
       "health_check": "Gate H red-team canary",
@@ -901,11 +1623,22 @@
       "status": "active",
       "source_code": "src/utils/feature-reachability.ts",
       "runtime_process": "in-process / CI check",
-      "entry_points": ["feature-reachability scan"],
-      "dependencies": ["src/utils/feature-flags.ts"],
-      "dependents": ["release process (ADR-0003 gate)"],
-      "data_read": ["src/ tree", "feature-flags.json"],
-      "data_written": ["reachability report"],
+      "entry_points": [
+        "feature-reachability scan"
+      ],
+      "dependencies": [
+        "src/utils/feature-flags.ts"
+      ],
+      "dependents": [
+        "release process (ADR-0003 gate)"
+      ],
+      "data_read": [
+        "src/ tree",
+        "feature-flags.json"
+      ],
+      "data_written": [
+        "reachability report"
+      ],
       "source_of_truth": "self (scan result)",
       "schedules": [],
       "feature_flags": [],
@@ -918,7 +1651,16 @@
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": "ADR-0003",
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-no-exit-contract"
     },
     {
       "component_id": "integration.telegram",
@@ -929,17 +1671,34 @@
       "status": "active",
       "source_code": "src/daemon/fast-checker.ts; src/bus/message.ts (send-telegram)",
       "runtime_process": "fast-checker poll + bus send",
-      "entry_points": ["getUpdates", "send-telegram"],
-      "dependencies": ["service.fast-checker"],
-      "dependents": ["agent.jarvis"],
-      "data_read": ["Telegram updates"],
-      "data_written": ["Telegram messages"],
+      "entry_points": [
+        "getUpdates",
+        "send-telegram"
+      ],
+      "dependencies": [
+        "service.fast-checker"
+      ],
+      "dependents": [
+        "agent.jarvis"
+      ],
+      "data_read": [
+        "Telegram updates"
+      ],
+      "data_written": [
+        "Telegram messages"
+      ],
       "source_of_truth": "Telegram API",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["ALLOWED_USER gate (B's numeric ID)"],
-      "credentials_used": ["BOT_TOKEN (Keychain/.env)"],
-      "external_side_effects": ["messages to B"],
+      "permissions": [
+        "ALLOWED_USER gate (B's numeric ID)"
+      ],
+      "credentials_used": [
+        "BOT_TOKEN (Keychain/.env)"
+      ],
+      "external_side_effects": [
+        "messages to B"
+      ],
       "health_check": "fast-checker.log",
       "tests": "unknown",
       "rollback": "n/a",
@@ -957,17 +1716,31 @@
       "status": "active",
       "source_code": "src/bus/oauth.ts",
       "runtime_process": "node-pty interactive claude-code",
-      "entry_points": ["claude-code worker spawn"],
+      "entry_points": [
+        "claude-code worker spawn"
+      ],
       "dependencies": [],
-      "dependents": ["agent.jarvis", "agent.nova", "agent.hermes", "agent.friday", "agent.atlas"],
+      "dependents": [
+        "agent.jarvis",
+        "agent.nova",
+        "agent.hermes",
+        "agent.friday",
+        "agent.atlas"
+      ],
       "data_read": [],
       "data_written": [],
       "source_of_truth": "Anthropic account",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["Max-tier LLM access (firewall: Cortext-only)"],
-      "credentials_used": ["Claude Max OAuth token"],
-      "external_side_effects": ["LLM inference"],
+      "permissions": [
+        "Max-tier LLM access (firewall: Cortext-only)"
+      ],
+      "credentials_used": [
+        "Claude Max OAuth token"
+      ],
+      "external_side_effects": [
+        "LLM inference"
+      ],
       "health_check": "ai.jarvis.claude-usage; ai.jarvis.usage-maximizer; weekly-cap-monitor",
       "tests": "n/a",
       "rollback": "n/a",
@@ -985,17 +1758,31 @@
       "status": "active",
       "source_code": "scripts/codex-fallback.sh; codex-keepwarm.sh",
       "runtime_process": "codex-app-server",
-      "entry_points": ["codex login"],
+      "entry_points": [
+        "codex login"
+      ],
       "dependencies": [],
-      "dependents": ["agent.forge", "agent.hermes"],
+      "dependents": [
+        "agent.forge",
+        "agent.hermes"
+      ],
       "data_read": [],
       "data_written": [],
       "source_of_truth": "ChatGPT account",
-      "schedules": ["ai.codex.keepwarm", "ai.codex.status-gauge"],
+      "schedules": [
+        "ai.codex.keepwarm",
+        "ai.codex.status-gauge"
+      ],
       "feature_flags": [],
-      "permissions": ["Codex LLM access"],
-      "credentials_used": ["ChatGPT Plus OAuth (acct1 icloud, acct2 gmail)"],
-      "external_side_effects": ["LLM inference"],
+      "permissions": [
+        "Codex LLM access"
+      ],
+      "credentials_used": [
+        "ChatGPT Plus OAuth (acct1 icloud, acct2 gmail)"
+      ],
+      "external_side_effects": [
+        "LLM inference"
+      ],
       "health_check": "ai.codex.status-gauge; codex-account-health prober",
       "tests": "n/a",
       "rollback": "codex-fallback to claude-code",
@@ -1013,15 +1800,23 @@
       "status": "active",
       "source_code": "~/.zshrc get_secret helper",
       "runtime_process": "macOS securityd",
-      "entry_points": ["get_secret <name>"],
+      "entry_points": [
+        "get_secret <name>"
+      ],
       "dependencies": [],
-      "dependents": ["all agents/lanes needing API keys"],
-      "data_read": ["secrets by name"],
+      "dependents": [
+        "all agents/lanes needing API keys"
+      ],
+      "data_read": [
+        "secrets by name"
+      ],
       "data_written": [],
       "source_of_truth": "self (Keychain)",
       "schedules": [],
       "feature_flags": [],
-      "permissions": ["GUI Keychain re-prompts (known gotcha); launchd needs explicit PATH"],
+      "permissions": [
+        "GUI Keychain re-prompts (known gotcha); launchd needs explicit PATH"
+      ],
       "credentials_used": [],
       "external_side_effects": [],
       "health_check": "n/a",
@@ -1041,15 +1836,25 @@
       "status": "active",
       "source_code": "~/Library/LaunchAgents/com.cortextos.daemon.plist",
       "runtime_process": "com.cortextos.daemon (pid 92652 observed)",
-      "entry_points": ["launchd"],
-      "dependencies": ["service.daemon"],
-      "dependents": ["all agents"],
+      "entry_points": [
+        "launchd"
+      ],
+      "dependencies": [
+        "service.daemon"
+      ],
+      "dependents": [
+        "all agents"
+      ],
       "data_read": [],
       "data_written": [],
       "source_of_truth": "plist",
-      "schedules": ["KeepAlive (continuous)"],
+      "schedules": [
+        "KeepAlive (continuous)"
+      ],
       "feature_flags": [],
-      "permissions": ["spawn daemon"],
+      "permissions": [
+        "spawn daemon"
+      ],
       "credentials_used": [],
       "external_side_effects": [],
       "health_check": "launchctl list com.cortextos.daemon",
@@ -1058,7 +1863,21 @@
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "success (POSIX convention; verified launchctl LastExitStatus)",
+        "1": "error (POSIX convention; not independently verified per-job)"
+      },
+      "last_exit_code": 0,
+      "last_productive_run": "2026-06-18T22:06:00Z",
+      "last_verified_status": "healthy"
     },
     {
       "component_id": "launchd.fleet-jobs-registry-note",
@@ -1069,24 +1888,51 @@
       "status": "unknown",
       "source_code": "~/Library/LaunchAgents/*.plist",
       "runtime_process": "launchd (see launchctl list)",
-      "entry_points": ["launchd"],
-      "dependencies": ["unknown per-job"],
-      "dependents": ["unknown per-job"],
-      "data_read": ["unknown per-job"],
-      "data_written": ["unknown per-job"],
+      "entry_points": [
+        "launchd"
+      ],
+      "dependencies": [
+        "unknown per-job"
+      ],
+      "dependents": [
+        "unknown per-job"
+      ],
+      "data_read": [
+        "unknown per-job"
+      ],
+      "data_written": [
+        "unknown per-job"
+      ],
       "source_of_truth": "each job's plist + script",
-      "schedules": ["per-job launchd schedules (unknown exact)"],
+      "schedules": [
+        "per-job launchd schedules (unknown exact)"
+      ],
       "feature_flags": [],
-      "permissions": ["unknown per-job"],
-      "credentials_used": ["unknown per-job"],
-      "external_side_effects": ["unknown per-job — some are data-ingest only, some (topstep/discordbot) touch live trading"],
+      "permissions": [
+        "unknown per-job"
+      ],
+      "credentials_used": [
+        "unknown per-job"
+      ],
+      "external_side_effects": [
+        "unknown per-job \u2014 some are data-ingest only, some (topstep/discordbot) touch live trading"
+      ],
       "health_check": "launchctl list",
       "tests": "unknown",
       "rollback": "launchctl unload per plist",
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": null,
-      "last_verified_at": "2026-06-18T20:49:59Z"
+      "last_verified_at": "2026-06-18T20:49:59Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "no standalone process-exit-code contract verified for this component (claude-code interactive process / in-process subsystem / unknown); classification deferred per RULES.md rule 8"
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "unknown"
     }
   ]
 }
