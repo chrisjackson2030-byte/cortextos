@@ -1,0 +1,1125 @@
+
+> cortextos@0.1.1 test
+> vitest run
+
+
+ RUN  v4.1.2 /Users/chrisjackson/cortextos
+
+ ❯ tests/unit/hooks/hooks.test.ts (42 tests | 1 failed) 15ms
+       × refuses a write that escapes via a symlink inside .claude (#18, codex) 4ms
+ ❯ tests/unit/hooks/hook-crash-alert.test.ts (22 tests | 4 failed) 24ms
+     × uses cortextos bus send-message with priority high 4ms
+     × body includes all required fields 0ms
+     × marks restart attempted yes when crashCount under limit 0ms
+     × uses fallback strings when reason and lastTask are empty 0ms
+[crons] WARNING: failed to parse crons.json for agent "bad-agent". Error: Unexpected token 'I', ...""crons": [INVALID JS"... is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "bad-agent"
+[crons] WARNING: failed to parse crons.json for agent "bad-agent". Error: Unexpected token 'I', ...""crons": [INVALID JS"... is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "bad-agent"
+ ❯ tests/unit/bus/hooks.test.ts (19 tests | 7 failed) 18ms
+       × falls back to hook_fire (no_handler_registered) when no handler is registered 5ms
+       × emits hook_fire (implicit_default) when handler returns undefined 1ms
+       × emits hook_fire with custom meta when handler returns {action:fire, meta} 0ms
+       × emits hook_block when handler returns {action:block} 0ms
+       × emits hook_escalate when handler returns {action:escalate} 0ms
+       × treats handler throw as hook_block with handler_threw reason 0ms
+       × awaits async handlers and routes their result correctly 2ms
+stdout | tests/integration/phase5-performance.test.ts > P-2: Fire latency — due cron fires within 1 min of schedule > overdue cron fires on the very next tick (<30s after start)
+[P-2] fire latency: 2 crons fired, max latency=30000ms (spec: <60000ms / 1 min)
+
+[crons] WARNING: failed to parse crons.json for agent "fm-cascade". Error: Unexpected token 'C', ...""crons": [CORRUPTED" is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "fm-cascade"
+[crons] WARNING: failed to parse crons.json for agent "fm-bak". Error: Expected double-quoted property name in JSON at position 21 (line 1 column 22)
+[crons] WARNING: falling back to crons.json.bak for agent "fm-bak"
+[crons] WARNING: failed to parse crons.json for agent "fm-bak-order". Error: Unexpected token 'N', "NOT JSON" is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "fm-bak-order"
+[crons] WARNING: failed to parse crons.json for agent "fm-bak-both-corrupt". Error: Unexpected token 'C', "CORRUPT PRIMARY" is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "fm-bak-both-corrupt"
+[crons] WARNING: failed to parse crons.json.bak for agent "fm-bak-both-corrupt". Error: Unexpected token 'C', "CORRUPT BAK" is not valid JSON
+stdout | tests/integration/phase5-performance.test.ts > P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simulated) > 100 overdue crons all fire within one 30s tick (fast no-op PTY)
+[P-5] 100 concurrent (no-op PTY) fires: count=2 simulated-elapsed=30000ms (spec: all within 30s simulated tick)
+
+stdout | tests/integration/phase5-performance.test.ts > P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simulated) > 100 crons with 10ms PTY delay each: all fire within 30s (1s tick latency, AF-2 extension)
+[P-5] 100 crons × 10ms PTY: count=4 simulated-elapsed=90000ms (AF-2: 100×10ms=1s sequential tick latency, 30x headroom under 30s TICK) (spec note: window = 30s tick + 1s latency = 31s, threshold 32000ms)
+
+ ❯ tests/unit/cli/bus-crons.test.ts (28 tests | 16 failed) 106ms
+     × success: adds a cron with interval schedule 14ms
+     × success: adds a cron with 5-field cron expression 1ms
+     × error: duplicate cron name → exits 1 with message 13ms
+     × error: agent not found in framework → exits 1 4ms
+     × error: invalid interval → exits 1 with helpful message 1ms
+     × success: removes an existing cron 5ms
+     × empty state: prints "No crons configured" message 3ms
+     × populated: prints table with name, schedule, last_fire, next_fire, prompt 3ms
+     × json flag: emits raw JSON array 3ms
+     × updates interval (--interval) 4ms
+     × updates schedule via --cron-expr 4ms
+     × updates prompt (--prompt) 6ms
+     × disables a cron (--enabled false) 5ms
+     × updates description (--desc) 3ms
+     × success: sends fire-cron IPC and prints confirmation 4ms
+     × error: daemon not running → exits 1 4ms
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts (6 tests | 6 failed) 684ms
+     × reports zero stale references for a clean agent (exit 0) 135ms
+     × reports stale references and exits non-zero in scan-only mode 108ms
+     × --apply substitutes the safe pattern but leaves CronCreate references alone 119ms
+     × --json emits machine-readable output 105ms
+     × errors out when the agent does not exist 101ms
+     × all-agents form scans every agent under orgs/*/agents/ 115ms
+stdout | tests/integration/phase5-performance.test.ts > SC-2: Scaling cliff — sequential fire drift at 1000 crons × 10ms PTY > 1000 crons × 10ms PTY = ~10s tick latency documented as cliff
+[SC-2] cliff probe — 1000 crons × 10ms PTY: fired=6/1000 wall-time=170000ms (theoretical sequential tick latency: 10s — cliff at ~3000 crons × 10ms = 30s TICK) [documentation only — no spec threshold]
+
+[crons] WARNING: failed to parse crons.json for agent "af-lastgood". Error: Expected ',' or '}' after property value in JSON at position 19 (line 1 column 20)
+[crons] WARNING: falling back to crons.json.bak for agent "af-lastgood"
+[crons] WARNING: failed to parse crons.json.bak for agent "af-lastgood". Error: Unexpected token 'b', "bak also corrupted" is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "af-lastgood". Error: Expected ',' or '}' after property value in JSON at position 19 (line 1 column 20)
+[crons] WARNING: falling back to crons.json.bak for agent "af-lastgood"
+[crons] WARNING: failed to parse crons.json.bak for agent "af-lastgood". Error: Unexpected token 'b', "bak also corrupted" is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "af-lastgood". Error: Expected ',' or '}' after property value in JSON at position 19 (line 1 column 20)
+[crons] WARNING: falling back to crons.json.bak for agent "af-lastgood"
+[crons] WARNING: failed to parse crons.json.bak for agent "af-lastgood". Error: Unexpected token 'b', "bak also corrupted" is not valid JSON
+ ❯ tests/integration/phase1-backtesting.test.ts (9 tests | 1 failed | 1 skipped) 1178ms
+     × 5 crons firing at the same minute all fire and all log entries appear 22ms
+[crons] WARNING: failed to parse crons.json for agent "af-snapshot-update". Error: Unexpected token 'c', "corrupt" is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "af-snapshot-update"
+[crons] WARNING: failed to parse crons.json.bak for agent "af-snapshot-update". Error: Unexpected token 'b', "bak corrupt" is not valid JSON
+stdout | tests/integration/phase5-performance.test.ts > Phase 5 Performance Summary > reports all measured results
+
+========================================
+  Phase 5 Performance Summary (5.4)    
+========================================
+  PASS  startup-1000-crons                        13.41 ms  spec <5000ms  (372.9x headroom)
+  PASS  fire-latency-30s-tick                  30000.00 ms  spec <60000ms  (2.0x headroom)
+  PASS  polling-100-agents-1000-crons              5.28 ms  spec <10000ms  (1894.0x headroom)
+  PASS  write-100-crons                            0.23 ms  spec <100ms  (431.5x headroom)
+  PASS  read-100-crons                             0.09 ms  spec <100ms  (1114.2x headroom)
+  PASS  concurrent-fires-100                   30000.00 simulated-ms  spec <30000simulated-ms  (1.0x headroom)
+  FAIL  concurrent-fires-100-slow-pty          90000.00 simulated-ms  spec <32000simulated-ms  (OVER SPEC)
+  PASS  disk-1000-crons-json                       0.28 MB  spec <100MB  (353.2x headroom)
+  PASS  disk-1000-crons-plus-logs                 12.73 MB  spec <100MB  (7.9x headroom)
+  PASS  sc1-startup-cliff                         27.07 ms  spec <5000ms  (184.7x headroom)
+  PASS  sc3-write-1000-crons                       0.98 ms  spec <500ms  (510.3x headroom)
+  PASS  sc4-fleet-200-agents                      11.24 ms  spec <10000ms  (889.7x headroom)
+  PASS  sc4-fleet-500-agents                      28.30 ms  spec <30000ms  (1060.1x headroom)
+========================================
+
+
+ ❯ tests/integration/phase5-performance.test.ts (17 tests | 5 failed) 1151ms
+     × overdue cron fires on the very next tick (<30s after start) 17ms
+     × 100 overdue crons all fire within one 30s tick (fast no-op PTY) 8ms
+     × 100 crons with 10ms PTY delay each: all fire within 30s (1s tick latency, AF-2 extension) 20ms
+     × 1000 crons × 10ms PTY = ~10s tick latency documented as cliff 42ms
+     × reports all measured results 2ms
+ ❯ tests/integration/phase5-failure-modes.test.ts (31 tests | 5 failed) 1313ms
+     × 100 overdue crons fire exactly once each on restart; no double-fires 131ms
+     × 50 crons with slow PTY (5ms each): tick latency stays under TICK_INTERVAL_MS 43ms
+     × 10 crons × 10ms PTY delay: all fire within 2 ticks 30ms
+     × 50 crons × 10ms PTY delay: all fire, documented as 500ms total tick latency 65ms
+     × 100 crons × 10ms PTY delay: 1s tick latency — acceptable, documented scaling limit 104ms
+[crons] WARNING: failed to parse crons.json for agent "bad-s4a". Error: Unexpected end of JSON input
+[crons] WARNING: falling back to crons.json.bak for agent "bad-s4a"
+[crons] WARNING: failed to parse crons.json for agent "bad-s4a". Error: Unexpected end of JSON input
+[crons] WARNING: falling back to crons.json.bak for agent "bad-s4a"
+[crons] WARNING: failed to parse crons.json for agent "s4b-agent". Error: Unexpected token 'I', ...""crons": [INVALID JS"... is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "s4b-agent"
+[crons] WARNING: failed to parse crons.json.bak for agent "s4b-agent". Error: Unexpected token 'C', "CORRUPT BAK 4b" is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "s4b-agent". Error: Unexpected token 'I', ...""crons": [INVALID JS"... is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "s4b-agent"
+[crons] WARNING: failed to parse crons.json.bak for agent "s4b-agent". Error: Unexpected token 'C', "CORRUPT BAK 4b" is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "s4b-agent". Error: Unexpected token 'I', ...""crons": [INVALID JS"... is not valid JSON
+[crons] WARNING: falling back to crons.json.bak for agent "s4b-agent"
+[crons] WARNING: failed to parse crons.json.bak for agent "s4b-agent". Error: Unexpected token 'C', "CORRUPT BAK 4b" is not valid JSON
+[crons] WARNING: crons.json for agent "s4c-agent" has unexpected shape.
+[crons] WARNING: falling back to crons.json.bak for agent "s4c-agent"
+[crons] WARNING: crons.json for agent "s4c-agent" has unexpected shape.
+[crons] WARNING: falling back to crons.json.bak for agent "s4c-agent"
+ ❯ tests/integration/phase5-e2e-simulation.test.ts (15 tests | 4 failed) 3313ms
+     × crons log failures gracefully when PTY unavailable; resume after agent restart 9ms
+     × 5a: slow injection (200ms each call) — all crons eventually delivered within retry window 11ms
+     × 10 crons fire concurrently; all log entries present, no JSON corruption 34ms
+     × second concurrent burst: 10 more simultaneous fires after 1h — cumulative counts correct 21ms
+[cron-scheduler] started for agent "new-user-scheduler" with 3 cron(s)
+[cron-scheduler] firing cron "cron-a" (was due 2026-06-18T06:48:41.918Z)
+[cron-scheduler] firing cron "cron-b" (was due 2026-06-18T06:49:41.918Z)
+[cron-scheduler] firing cron "cron-a" (was due 2026-06-18T06:50:41.918Z)
+[cron-scheduler] firing cron "cron-c" (was due 2026-06-18T06:51:41.918Z)
+[cron-scheduler] firing cron "cron-a" (was due 2026-06-18T06:52:41.918Z)
+[cron-scheduler] firing cron "cron-b" (was due 2026-06-18T06:52:41.918Z)
+[cron-scheduler] firing cron "cron-a" (was due 2026-06-18T06:54:41.918Z)
+[cron-scheduler] firing cron "cron-b" (was due 2026-06-18T06:55:41.918Z)
+[cron-scheduler] firing cron "cron-a" (was due 2026-06-18T06:56:41.918Z)
+[cron-scheduler] firing cron "cron-c" (was due 2026-06-18T06:56:41.918Z)
+[cron-scheduler] stopped for agent "new-user-scheduler"
+[cron-scheduler] started for agent "migrated-scheduler-agent" with 2 cron(s)
+[cron-scheduler] firing cron "migrated-heartbeat" (was due 2026-06-18T06:49:41.982Z)
+[cron-scheduler] firing cron "migrated-heartbeat" (was due 2026-06-18T06:52:41.982Z)
+[cron-scheduler] firing cron "migrated-report" (was due 2026-06-18T06:53:41.982Z)
+[cron-scheduler] firing cron "migrated-heartbeat" (was due 2026-06-18T06:55:41.982Z)
+[cron-scheduler] stopped for agent "migrated-scheduler-agent"
+[cron-scheduler] started for agent "audit-agent" with 1 cron(s)
+[cron-scheduler] firing cron "multi" (was due 2026-06-18T07:16:42.142Z)
+[cron-scheduler] firing cron "multi" (was due 2026-06-18T07:46:42.142Z)
+[cron-scheduler] firing cron "multi" (was due 2026-06-18T08:16:42.142Z)
+[cron-scheduler] firing cron "multi" (was due 2026-06-18T08:46:42.142Z)
+[cron-scheduler] firing cron "multi" (was due 2026-06-18T09:16:42.142Z)
+[cron-scheduler] stopped for agent "audit-agent"
+[cron-scheduler] catch-up: cron "fail-cron" missed fire at 2026-06-18T05:16:42.183Z — scheduling immediate fire
+[cron-scheduler] started for agent "audit-agent" with 1 cron(s)
+[cron-scheduler] firing cron "fail-cron" (was due 2026-06-18T06:46:42.183Z)
+[cron-scheduler] onFire failed for "fail-cron" (attempt 1/4, retrying in 1000ms): Simulated PTY failure #1
+[cron-scheduler] onFire failed for "fail-cron" (attempt 2/4, retrying in 4000ms): Simulated PTY failure #2
+[cron-scheduler] onFire failed for "fail-cron" (attempt 3/4, retrying in 16000ms): Simulated PTY failure #3
+[cron-scheduler] onFire failed for "fail-cron" after all 4 attempts — giving up. Last error: Simulated PTY failure #4
+[cron-scheduler] WARNING: "fail-cron" dispatch failed — advancing to next slot 2026-06-18T07:17:12.183Z to avoid busy-loop (no last_fired_at update; failure recorded in execution log)
+[cron-scheduler] stopped for agent "audit-agent"
+[crons] WARNING: failed to parse crons.json for agent "audit-agent". Error: Expected double-quoted property name in JSON at position 20 (line 1 column 21)
+[crons] WARNING: falling back to crons.json.bak for agent "audit-agent"
+[crons] WARNING: failed to parse crons.json for agent "audit-agent". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+[crons] WARNING: falling back to crons.json.bak for agent "audit-agent"
+[crons] WARNING: failed to parse crons.json.bak for agent "audit-agent". Error: Unexpected token '<', "<<< also c"... is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "malformed-agent". Error: Unexpected token 'I', ...""crons": [INVALID JS"... is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "audit-agent". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+[crons] WARNING: falling back to crons.json.bak for agent "audit-agent"
+[crons] WARNING: failed to parse crons.json.bak for agent "audit-agent". Error: Unexpected token '<', "<<< also c"... is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "audit-agent". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+[crons] WARNING: falling back to crons.json.bak for agent "audit-agent"
+[crons] WARNING: failed to parse crons.json.bak for agent "audit-agent". Error: Unexpected token '<', "<<< also c"... is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "boris". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+[crons] WARNING: crons.json for agent "paul" has unexpected shape.
+[crons] WARNING: failed to parse crons.json for agent "boris". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+[crons] WARNING: falling back to crons.json.bak for agent "boris"
+[crons] WARNING: failed to parse crons.json for agent "boris". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+[crons] WARNING: falling back to crons.json.bak for agent "boris"
+[crons] WARNING: failed to parse crons.json.bak for agent "boris". Error: Unexpected token '<', "<<< also broken" is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "boris". Error: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+ ❯ tests/integration/multi-agent-crons.test.ts (11 tests | 1 failed) 5949ms
+     × 5 agents each with 3 crons firing at same simulated minute: no lost updates 48ms
+[crons] WARNING: failed to parse crons.json for agent "broken-agent". Error: Unexpected token 'o', "not valid j"... is not valid JSON
+[crons] WARNING: failed to parse crons.json for agent "bad-agent". Error: Unexpected token 'o', "not valid j"... is not valid JSON
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 50 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/multi-agent-crons.test.ts > Scenario 7: Concurrent scheduler ticks don't corrupt crons.json > 5 agents each with 3 crons firing at same simulated minute: no lost updates
+AssertionError: conc-a: 3 fires: expected 2 to be 3 // Object.is equality
+
+- Expected
++ Received
+
+- 3
++ 2
+
+ ❯ tests/integration/multi-agent-crons.test.ts:909:73
+    907|     // Every agent should have fired all 3 crons
+    908|     for (const agentName of testAgents) {
+    909|       expect(totalFiredByAgent.get(agentName), `${agentName}: 3 fires`…
+       |                                                                         ^
+    910|     }
+    911|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/50]⎯
+
+ FAIL  tests/integration/phase1-backtesting.test.ts > Scenario 5: Concurrent cron fires > 5 crons firing at the same minute all fire and all log entries appear
+AssertionError: expected [ 'cron-a', 'cron-b' ] to have a length of 5 but got 2
+
+- Expected
++ Received
+
+- 5
++ 2
+
+ ❯ tests/integration/phase1-backtesting.test.ts:610:24
+    608|
+    609|     // All 5 fired
+    610|     expect(firedNames).toHaveLength(5);
+       |                        ^
+    611|     expect(new Set(firedNames)).toEqual(new Set(cronNames));
+    612|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/50]⎯
+
+ FAIL  tests/integration/phase5-e2e-simulation.test.ts > Scenario 3: Agent crash — PTY unavailable, graceful failure, recovery > crons log failures gracefully when PTY unavailable; resume after agent restart
+AssertionError: expected 2 to be greater than or equal to 3
+ ❯ tests/integration/phase5-e2e-simulation.test.ts:501:32
+    499|
+    500|     const successBeforeCrash = firedSuccessfully.length;
+    501|     expect(successBeforeCrash).toBeGreaterThanOrEqual(3);
+       |                                ^
+    502|
+    503|     // "Crash" the agent: mark unavailable
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/50]⎯
+
+ FAIL  tests/integration/phase5-e2e-simulation.test.ts > Scenario 5: PTY degradation — slow injection, intermittent failure, retry coverage > 5a: slow injection (200ms each call) — all crons eventually delivered within retry window
+AssertionError: expected [ 'slow-1', 'slow-2' ] to have a length of 3 but got 2
+
+- Expected
++ Received
+
+- 3
++ 2
+
+ ❯ tests/integration/phase5-e2e-simulation.test.ts:844:24
+    842|
+    843|     // Assert: all 3 crons eventually delivered (no failures despite 2…
+    844|     expect(firedNames).toHaveLength(3);
+       |                        ^
+    845|     for (const name of cronNames) {
+    846|       expect(firedNames).toContain(name);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/50]⎯
+
+ FAIL  tests/integration/phase5-e2e-simulation.test.ts > Scenario 6: Concurrent stress — 10 crons fire simultaneously, no race conditions > 10 crons fire concurrently; all log entries present, no JSON corruption
+AssertionError: expected [ 'stress-a:a1', 'stress-a:a2', …(4) ] to have a length of 10 but got 6
+
+- Expected
++ Received
+
+- 10
++ 6
+
+ ❯ tests/integration/phase5-e2e-simulation.test.ts:1053:22
+    1051|
+    1052|     // Assert: all 10 crons produced fire entries
+    1053|     expect(allFired).toHaveLength(10);
+       |                      ^
+    1054|
+    1055|     // Assert: each specific cron fired exactly once
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/50]⎯
+
+ FAIL  tests/integration/phase5-e2e-simulation.test.ts > Scenario 6: Concurrent stress — 10 crons fire simultaneously, no race conditions > second concurrent burst: 10 more simultaneous fires after 1h — cumulative counts correct
+AssertionError: expected [ 'a:ba1', 'a:ba2', 'b:bb1', 'b:bb2' ] to have a length of 10 but got 4
+
+- Expected
++ Received
+
+- 10
++ 4
+
+ ❯ tests/integration/phase5-e2e-simulation.test.ts:1119:24
+    1117|     // First burst: all 10 fire on tick 1
+    1118|     await vi.advanceTimersByTimeAsync(TICK_MS + 1_000);
+    1119|     expect(totalFired).toHaveLength(10);
+       |                        ^
+    1120|
+    1121|     // Advance 1h — all 10 should fire again in next tick
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/50]⎯
+
+ FAIL  tests/integration/phase5-failure-modes.test.ts > FM-5: Catch-up storm — 100+ overdue crons, bounded + no tick drift > 100 overdue crons fire exactly once each on restart; no double-fires
+AssertionError: expected 3 to be 100 // Object.is equality
+
+- Expected
++ Received
+
+- 100
++ 3
+
+ ❯ tests/integration/phase5-failure-modes.test.ts:681:24
+    679|     }
+    680|
+    681|     expect(totalFires).toBe(CRON_COUNT); // exactly 1 per cron
+       |                        ^
+    682|     expect(maxFires).toBe(1);            // no double-fires
+    683|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/50]⎯
+
+ FAIL  tests/integration/phase5-failure-modes.test.ts > FM-5: Catch-up storm — 100+ overdue crons, bounded + no tick drift > 50 crons with slow PTY (5ms each): tick latency stays under TICK_INTERVAL_MS
+AssertionError: expected 2 to be 50 // Object.is equality
+
+- Expected
++ Received
+
+- 50
++ 2
+
+ ❯ tests/integration/phase5-failure-modes.test.ts:731:23
+    729|
+    730|     // All 50 crons fired
+    731|     expect(callCount).toBe(50);
+       |                       ^
+    732|
+    733|     scheduler.stop();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/50]⎯
+
+ FAIL  tests/integration/phase5-failure-modes.test.ts > AF-2: Sequential fire under slow PTY — drift quantification > 10 crons × 10ms PTY delay: all fire within 2 ticks
+AssertionError: expected 3 to be 10 // Object.is equality
+
+- Expected
++ Received
+
+- 10
++ 3
+
+ ❯ tests/integration/phase5-failure-modes.test.ts:1201:23
+    1199|     await vi.advanceTimersByTimeAsync(2 * TICK_MS + 10 * 10 + 1000);
+    1200|
+    1201|     expect(callCount).toBe(10);
+       |                       ^
+    1202|     // 10 × 10ms = 100ms total tick latency — well under 30s TICK_INTE…
+    1203|     scheduler.stop();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/50]⎯
+
+ FAIL  tests/integration/phase5-failure-modes.test.ts > AF-2: Sequential fire under slow PTY — drift quantification > 50 crons × 10ms PTY delay: all fire, documented as 500ms total tick latency
+AssertionError: expected 3 to be 50 // Object.is equality
+
+- Expected
++ Received
+
+- 50
++ 3
+
+ ❯ tests/integration/phase5-failure-modes.test.ts:1224:23
+    1222|     await vi.advanceTimersByTimeAsync(2 * TICK_MS + 50 * 10 + 2000);
+    1223|
+    1224|     expect(callCount).toBe(50);
+       |                       ^
+    1225|     // 50 × 10ms = 500ms — still well under TICK_INTERVAL_MS (30s)
+    1226|     scheduler.stop();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/50]⎯
+
+ FAIL  tests/integration/phase5-failure-modes.test.ts > AF-2: Sequential fire under slow PTY — drift quantification > 100 crons × 10ms PTY delay: 1s tick latency — acceptable, documented scaling limit
+AssertionError: expected 4 to be 100 // Object.is equality
+
+- Expected
++ Received
+
+- 100
++ 4
+
+ ❯ tests/integration/phase5-failure-modes.test.ts:1252:23
+    1250|     await vi.advanceTimersByTimeAsync(3 * TICK_MS + 100 * 10 + 3000);
+    1251|
+    1252|     expect(callCount).toBe(100);
+       |                       ^
+    1253|     scheduler.stop();
+    1254|   }, 60_000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/50]⎯
+
+ FAIL  tests/integration/phase5-performance.test.ts > P-2: Fire latency — due cron fires within 1 min of schedule > overdue cron fires on the very next tick (<30s after start)
+AssertionError: expected 2 to be 10 // Object.is equality
+
+- Expected
++ Received
+
+- 10
++ 2
+
+ ❯ tests/integration/phase5-performance.test.ts:310:22
+    308|
+    309|     // All 10 overdue crons should fire
+    310|     expect(allFired).toBe(10);
+       |                      ^
+    311|     // Max latency should be within 1 tick interval (30s) plus buffer
+    312|     expect(maxLatency).toBeLessThan(60_000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/50]⎯
+
+ FAIL  tests/integration/phase5-performance.test.ts > P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simulated) > 100 overdue crons all fire within one 30s tick (fast no-op PTY)
+AssertionError: expected 2 to be 100 // Object.is equality
+
+- Expected
++ Received
+
+- 100
++ 2
+
+ ❯ tests/integration/phase5-performance.test.ts:510:23
+    508|     );
+    509|
+    510|     expect(fireCount).toBe(100);
+       |                       ^
+    511|     // All fires should occur within one 30s tick of the scheduler sta…
+    512|     expect(simElapsedMs).toBeLessThanOrEqual(30_000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/50]⎯
+
+ FAIL  tests/integration/phase5-performance.test.ts > P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simulated) > 100 crons with 10ms PTY delay each: all fire within 30s (1s tick latency, AF-2 extension)
+AssertionError: expected 4 to be 100 // Object.is equality
+
+- Expected
++ Received
+
+- 100
++ 4
+
+ ❯ tests/integration/phase5-performance.test.ts:582:23
+    580|     );
+    581|
+    582|     expect(fireCount).toBe(100);
+       |                       ^
+    583|     // All 100 fires happen within 30s tick + 1s sequential latency = …
+    584|     expect(simElapsedMs).toBeLessThanOrEqual(P5_SLOW_PTY_THRESHOLD_MS);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/50]⎯
+
+ FAIL  tests/integration/phase5-performance.test.ts > SC-2: Scaling cliff — sequential fire drift at 1000 crons × 10ms PTY > 1000 crons × 10ms PTY = ~10s tick latency documented as cliff
+AssertionError: expected 6 to be 1000 // Object.is equality
+
+- Expected
++ Received
+
+- 1000
++ 6
+
+ ❯ tests/integration/phase5-performance.test.ts:783:23
+    781|
+    782|     // All 1000 should eventually fire (across multiple ticks if neede…
+    783|     expect(fireCount).toBe(1000);
+       |                       ^
+    784|
+    785|     vi.useRealTimers();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/50]⎯
+
+ FAIL  tests/integration/phase5-performance.test.ts > Phase 5 Performance Summary > reports all measured results
+AssertionError: concurrent-fires-100-slow-pty: 90000 must be <= 32000: expected 90000 to be less than or equal to 32000
+ ❯ tests/integration/phase5-performance.test.ts:909:71
+    907|     // All must pass
+    908|     for (const [key, { measured, threshold }] of Object.entries(perfRe…
+    909|       expect(measured, `${key}: ${measured} must be <= ${threshold}`).…
+       |                                                                       ^
+    910|     }
+    911|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/50]⎯
+
+ FAIL  tests/integration/upgrade-cron-teaching-cli.test.ts > bus upgrade-cron-teaching CLI > reports zero stale references for a clean agent (exit 0)
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts:68:18
+     66|       'Crons are daemon-managed. Do NOT use CronCreate or /loop. Use c…
+     67|     const { stdout, code } = await runCli(['clean']);
+     68|     expect(code).toBe(0);
+       |                  ^
+     69|     expect(stdout).toContain('no stale cron-teaching references');
+     70|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/50]⎯
+
+ FAIL  tests/integration/upgrade-cron-teaching-cli.test.ts > bus upgrade-cron-teaching CLI > reports stale references and exits non-zero in scan-only mode
+AssertionError: expected '' to contain 'CronCreate'
+
+- Expected
++ Received
+
+- CronCreate
+
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts:77:20
+     75|     const { stdout, code } = await runCli(['dirty']);
+     76|     expect(code).not.toBe(0);
+     77|     expect(stdout).toContain('CronCreate');
+       |                    ^
+     78|     expect(stdout).toContain('(configured in config.json)');
+     79|     expect(stdout).toContain('--apply');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/50]⎯
+
+ FAIL  tests/integration/upgrade-cron-teaching-cli.test.ts > bus upgrade-cron-teaching CLI > --apply substitutes the safe pattern but leaves CronCreate references alone
+AssertionError: expected 'Heartbeat (configured in config.json)…' to contain '(configured via cortextos bus add-cro…'
+
+- Expected
++ Received
+
+- (configured via cortextos bus add-cron)
++ Heartbeat (configured in config.json).
++ Use CronCreate to register.
++
+
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts:93:19
+     91|     const { stdout } = await runCli(['mixed', '--apply']);
+     92|     const after = readFileSync(file, 'utf-8');
+     93|     expect(after).toContain('(configured via cortextos bus add-cron)');
+       |                   ^
+     94|     expect(after).not.toContain('(configured in config.json)');
+     95|     expect(after).toContain('Use CronCreate to register.');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/50]⎯
+
+ FAIL  tests/integration/upgrade-cron-teaching-cli.test.ts > bus upgrade-cron-teaching CLI > --json emits machine-readable output
+SyntaxError: Unexpected end of JSON input
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts:104:25
+    102|     const { stdout, code } = await runCli(['jsonagent', '--json']);
+    103|     expect(code).not.toBe(0);
+    104|     const parsed = JSON.parse(stdout);
+       |                         ^
+    105|     expect(Array.isArray(parsed)).toBe(true);
+    106|     expect(parsed[0].agent).toBe('jsonagent');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/50]⎯
+
+ FAIL  tests/integration/upgrade-cron-teaching-cli.test.ts > bus upgrade-cron-teaching CLI > errors out when the agent does not exist
+AssertionError: expected '/Users/chrisjackson/cortextos/dist/cl…' to contain '\'ghost-agent\' not found'
+
+- Expected
++ Received
+
+- 'ghost-agent' not found
++ /Users/chrisjackson/cortextos/dist/cli.js:712
++       throw new Error(
++             ^
++
++ Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/upgrade-cron-teach-s6G6e3'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
++     at resolveEnv (/Users/chrisjackson/cortextos/dist/cli.js:712:13)
++     at Command.<anonymous> (/Users/chrisjackson/cortextos/dist/cli.js:9541:15)
++
++ Node.js v25.6.1
++
+
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts:114:20
+    112|     const { stderr, code } = await runCli(['ghost-agent']);
+    113|     expect(code).not.toBe(0);
+    114|     expect(stderr).toContain("'ghost-agent' not found");
+       |                    ^
+    115|   });
+    116|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/50]⎯
+
+ FAIL  tests/integration/upgrade-cron-teaching-cli.test.ts > bus upgrade-cron-teaching CLI > all-agents form scans every agent under orgs/*/agents/
+AssertionError: expected '' to match /a1: 1 stale reference/
+
+- Expected:
+/a1: 1 stale reference/
+
++ Received:
+""
+
+ ❯ tests/integration/upgrade-cron-teaching-cli.test.ts:122:20
+    120|     const { stdout, code } = await runCli([]);
+    121|     expect(code).not.toBe(0); // a1 has stale refs
+    122|     expect(stdout).toMatch(/a1: 1 stale reference/);
+       |                    ^
+    123|     expect(stdout).toMatch(/✓ a2: no stale cron-teaching references/);
+    124|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > falls back to hook_fire (no_handler_registered) when no handler is registered
+AssertionError: expected 'action' to be 'hook_fire' // Object.is equality
+
+Expected: "hook_fire"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:156:23
+    154|       await dispatchHook(makeHook(), makeEvent());
+    155|       const e = lastEmittedEvent();
+    156|       expect(e?.name).toBe('hook_fire');
+       |                       ^
+    157|       expect(e?.meta.outcome).toBe('no_handler_registered');
+    158|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > emits hook_fire (implicit_default) when handler returns undefined
+AssertionError: expected 'action' to be 'hook_fire' // Object.is equality
+
+Expected: "hook_fire"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:164:23
+    162|       await dispatchHook(makeHook(), makeEvent());
+    163|       const e = lastEmittedEvent();
+    164|       expect(e?.name).toBe('hook_fire');
+       |                       ^
+    165|       expect(e?.meta.outcome).toBe('implicit_default');
+    166|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > emits hook_fire with custom meta when handler returns {action:fire, meta}
+AssertionError: expected 'action' to be 'hook_fire' // Object.is equality
+
+Expected: "hook_fire"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:176:23
+    174|       await dispatchHook(makeHook(), makeEvent());
+    175|       const e = lastEmittedEvent();
+    176|       expect(e?.name).toBe('hook_fire');
+       |                       ^
+    177|       expect(e?.meta.outcome).toBe('handler_ran');
+    178|       expect(e?.meta.processed_meld_id).toBe(12345);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > emits hook_block when handler returns {action:block}
+AssertionError: expected 'action' to be 'hook_block' // Object.is equality
+
+Expected: "hook_block"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:188:23
+    186|       await dispatchHook(makeHook(), makeEvent());
+    187|       const e = lastEmittedEvent();
+    188|       expect(e?.name).toBe('hook_block');
+       |                       ^
+    189|       expect(e?.meta.outcome).toBe('guardrail_triggered');
+    190|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > emits hook_escalate when handler returns {action:escalate}
+AssertionError: expected 'action' to be 'hook_escalate' // Object.is equality
+
+Expected: "hook_escalate"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:199:23
+    197|       await dispatchHook(makeHook(), makeEvent());
+    198|       const e = lastEmittedEvent();
+    199|       expect(e?.name).toBe('hook_escalate');
+       |                       ^
+    200|       expect(e?.meta.outcome).toBe('severity_upgraded_to_critical');
+    201|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > treats handler throw as hook_block with handler_threw reason
+AssertionError: expected 'action' to be 'hook_block' // Object.is equality
+
+Expected: "hook_block"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:209:23
+    207|       await dispatchHook(makeHook(), makeEvent());
+    208|       const e = lastEmittedEvent();
+    209|       expect(e?.name).toBe('hook_block');
+       |                       ^
+    210|       expect(typeof e?.meta.outcome).toBe('string');
+    211|       expect(String(e?.meta.outcome)).toContain('handler_threw');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/50]⎯
+
+ FAIL  tests/unit/bus/hooks.test.ts > src/bus/hooks — Day-2 per-handler wiring > dispatchHook — Day-2 result-driven emit > awaits async handlers and routes their result correctly
+AssertionError: expected 'action' to be 'hook_block' // Object.is equality
+
+Expected: "hook_block"
+Received: "action"
+
+ ❯ tests/unit/bus/hooks.test.ts:222:23
+    220|       await dispatchHook(makeHook(), makeEvent());
+    221|       const e = lastEmittedEvent();
+    222|       expect(e?.name).toBe('hook_block');
+       |                       ^
+    223|       expect(e?.meta.outcome).toBe('async_block');
+    224|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus add-cron > success: adds a cron with interval schedule
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-EHDxHa'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2232:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus add-cron > success: adds a cron with 5-field cron expression
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-Vr1SNu'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2232:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus add-cron > error: duplicate cron name → exits 1 with message
+AssertionError: expected [Function] to throw error including '__PROCESS_EXIT_1__' but got 'Resolved CTX_AGENT_DIR \'/Users/chris…'
+
+Expected: "__PROCESS_EXIT_1__"
+Received: "Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-doLfIO'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed."
+
+ ❯ tests/unit/cli/bus-crons.test.ts:196:6
+    194|         'node', 'bus', 'add-cron', TEST_AGENT, 'heartbeat', '6h', 'Dup…
+    195|       ])
+    196|     ).rejects.toThrow('__PROCESS_EXIT_1__');
+       |      ^
+    197|
+    198|     expect(exitSpy).toHaveBeenCalledWith(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus add-cron > error: agent not found in framework → exits 1
+AssertionError: expected [Function] to throw error including '__PROCESS_EXIT_1__' but got 'Resolved CTX_AGENT_DIR \'/Users/chris…'
+
+Expected: "__PROCESS_EXIT_1__"
+Received: "Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-hYTIuP'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed."
+
+ ❯ tests/unit/cli/bus-crons.test.ts:227:6
+    225|         'node', 'bus', 'add-cron', 'unknown-agent', 'heartbeat', '6h',…
+    226|       ])
+    227|     ).rejects.toThrow('__PROCESS_EXIT_1__');
+       |      ^
+    228|
+    229|     expect(exitSpy).toHaveBeenCalledWith(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus add-cron > error: invalid interval → exits 1 with helpful message
+AssertionError: expected [Function] to throw error including '__PROCESS_EXIT_1__' but got 'Resolved CTX_AGENT_DIR \'/Users/chris…'
+
+Expected: "__PROCESS_EXIT_1__"
+Received: "Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-6cxzcR'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed."
+
+ ❯ tests/unit/cli/bus-crons.test.ts:243:6
+    241|         'node', 'bus', 'add-cron', TEST_AGENT, 'heartbeat', 'every-6-h…
+    242|       ])
+    243|     ).rejects.toThrow('__PROCESS_EXIT_1__');
+       |      ^
+    244|
+    245|     expect(exitSpy).toHaveBeenCalledWith(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus remove-cron > success: removes an existing cron
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-GqkdtZ'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2279:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus list-crons > empty state: prints "No crons configured" message
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-ud3kjs'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2299:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus list-crons > populated: prints table with name, schedule, last_fire, next_fire, prompt
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-t9ibWI'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2299:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus list-crons > json flag: emits raw JSON array
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-ZFxWDU'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2299:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus update-cron > updates interval (--interval)
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-o3Sowt'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2412:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus update-cron > updates schedule via --cron-expr
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-JbEFW3'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2412:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus update-cron > updates prompt (--prompt)
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-4DwvR0'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2412:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus update-cron > disables a cron (--enabled false)
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-I8hV3F'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2412:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus update-cron > updates description (--desc)
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-wY8Vn8'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2412:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[43/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus test-cron-fire > success: sends fire-cron IPC and prints confirmation
+Error: Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-HMqFhV'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed.
+ ❯ resolveEnv src/utils/env.ts:100:13
+     98|     const agentDirResolved = resolvePath(agentDir);
+     99|     if (agentDirResolved !== fwRootResolved && !agentDirResolved.start…
+    100|       throw new Error(
+       |             ^
+    101|         `Resolved CTX_AGENT_DIR '${agentDir}' is not under CTX_FRAMEWO…
+    102|         `This indicates a sandbox/live environment leak — likely CTX_F…
+ ❯ Command.<anonymous> src/cli/bus.ts:2431:17
+ ❯ Command.listener [as _actionHandler] node_modules/commander/lib/command.js:568:17
+ ❯ node_modules/commander/lib/command.js:1604:14
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1603:27
+ ❯ node_modules/commander/lib/command.js:1367:27
+ ❯ Command._chainOrCall node_modules/commander/lib/command.js:1488:12
+ ❯ Command._dispatchSubcommand node_modules/commander/lib/command.js:1363:25
+ ❯ Command._parseCommand node_modules/commander/lib/command.js:1559:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[44/50]⎯
+
+ FAIL  tests/unit/cli/bus-crons.test.ts > bus test-cron-fire > error: daemon not running → exits 1
+AssertionError: expected [Function] to throw error including '__PROCESS_EXIT_1__' but got 'Resolved CTX_AGENT_DIR \'/Users/chris…'
+
+Expected: "__PROCESS_EXIT_1__"
+Received: "Resolved CTX_AGENT_DIR '/Users/chrisjackson/cortextos/orgs/main/agents/jarvis' is not under CTX_FRAMEWORK_ROOT '/var/folders/d5/k0s1qbf92bj85kxpnvddr6_m0000gn/T/bus-crons-fw-ACg3v2'. This indicates a sandbox/live environment leak — likely CTX_FRAMEWORK_ROOT was overridden but CTX_AGENT_DIR or CTX_PROJECT_ROOT was inherited from the parent shell. Refusing to proceed."
+
+ ❯ tests/unit/cli/bus-crons.test.ts:480:6
+    478|     await expect(
+    479|       busCommand.parseAsync(['node', 'bus', 'test-cron-fire', TEST_AGE…
+    480|     ).rejects.toThrow('__PROCESS_EXIT_1__');
+       |      ^
+    481|
+    482|     expect(exitSpy).toHaveBeenCalledWith(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[45/50]⎯
+
+ FAIL  tests/unit/hooks/hook-crash-alert.test.ts > notifyAgents > uses cortextos bus send-message with priority high
+AssertionError: expected '/opt/homebrew/Cellar/node/25.6.1/bin/…' to be 'cortextos' // Object.is equality
+
+Expected: "cortextos"
+Received: "/opt/homebrew/Cellar/node/25.6.1/bin/node"
+
+ ❯ tests/unit/hooks/hook-crash-alert.test.ts:83:17
+     81|     });
+     82|     const [cmd, args] = execFileMock.mock.calls[0];
+     83|     expect(cmd).toBe('cortextos');
+       |                 ^
+     84|     expect(args.slice(0, 4)).toEqual(['bus', 'send-message', 'chief', …
+     85|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[46/50]⎯
+
+ FAIL  tests/unit/hooks/hook-crash-alert.test.ts > notifyAgents > body includes all required fields
+AssertionError: expected 'high' to contain 'agent=dev'
+
+Expected: "agent=dev"
+Received: "high"
+
+ ❯ tests/unit/hooks/hook-crash-alert.test.ts:98:18
+     96|     });
+     97|     const body: string = execFileMock.mock.calls[0][1][4];
+     98|     expect(body).toContain('agent=dev');
+       |                  ^
+     99|     expect(body).toContain('type=daemon-crashed');
+    100|     expect(body).toContain('reason: PTY null write');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[47/50]⎯
+
+ FAIL  tests/unit/hooks/hook-crash-alert.test.ts > notifyAgents > marks restart attempted yes when crashCount under limit
+AssertionError: expected 'high' to contain 'restart attempted: yes'
+
+Expected: "restart attempted: yes"
+Received: "high"
+
+ ❯ tests/unit/hooks/hook-crash-alert.test.ts:116:46
+    114|       recipients: ['chief'],
+    115|     });
+    116|     expect(execFileMock.mock.calls[0][1][4]).toContain('restart attemp…
+       |                                              ^
+    117|   });
+    118|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[48/50]⎯
+
+ FAIL  tests/unit/hooks/hook-crash-alert.test.ts > notifyAgents > uses fallback strings when reason and lastTask are empty
+AssertionError: expected 'high' to contain 'reason: none'
+
+Expected: "reason: none"
+Received: "high"
+
+ ❯ tests/unit/hooks/hook-crash-alert.test.ts:130:18
+    128|     });
+    129|     const body: string = execFileMock.mock.calls[0][1][4];
+    130|     expect(body).toContain('reason: none');
+       |                  ^
+    131|     expect(body).toContain('last status: unknown');
+    132|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[49/50]⎯
+
+ FAIL  tests/unit/hooks/hooks.test.ts > Hook Utilities > isClaudeDirOperation (permission-gate hardening) > refuses a write that escapes via a symlink inside .claude (#18, codex)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/hooks/hooks.test.ts:154:82
+    152|         // Sanity: a genuine (not-yet-existing) file directly inside .…
+    153|         expect(isClaudeDirOperation('Write',
+    154|           { file_path: join(realAgentDir, '.claude', 'ok.txt') }, real…
+       |                                                                                  ^
+    155|       } finally {
+    156|         rmSync(base, { recursive: true, force: true });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[50/50]⎯
+
+
+ Test Files  10 failed | 109 passed (119)
+      Tests  50 failed | 1985 passed | 1 skipped (2036)
+   Start at  02:46:36
+   Duration  15.71s (transform 3.59s, setup 0ms, import 5.65s, tests 72.41s, environment 6ms)
+
