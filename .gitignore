@@ -64,3 +64,10 @@ dashboard/test-*.py
 !community/agents/research-agent/
 !community/agents/research-agent/**
 bus/__pycache__/
+
+# Security: never commit plaintext auth/cookie/session files (2026-06-18 audit fix)
+.fb-auth.json
+**/.fb-auth.json
+*-auth.json
+**/*cookies*.json
+**/*.session

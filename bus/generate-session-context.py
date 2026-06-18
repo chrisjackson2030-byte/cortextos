@@ -468,10 +468,13 @@ def generate_context(agent_name: str, org: str) -> str:
     fanout_reflex = (
         "- **FAN-OUT (hard rule, fire at DECISION time):** On ANY request with >=2 independent units, "
         "or any task >~2 steps: FIRST enumerate the independent units, THEN spawn one worker per unit "
-        "IN A SINGLE TURN (background each with & to dispatch >=3 at once), THEN monitor + join. "
-        "RAIL: use the NATIVE `cortextos spawn-worker <name> --dir <abspath> --prompt \"...\" --parent jarvis` "
-        "(that is the rail `cortextos list-workers` and the bus measure; the harness Agent tool is parallel "
-        "but INVISIBLE to list-workers). --dir is REQUIRED. Prove fan-out with `cortextos list-workers` >=3 running. "
+        "IN A SINGLE TURN (multiple calls in one response to dispatch >=3 at once), THEN monitor + join. "
+        "RAIL (CORRECTED 2026-06-18): use the harness Agent/sub-agent tool with run_in_background — it runs "
+        "in parallel AND returns each result to you on completion (the working, joinable rail). DO NOT use the "
+        "native `cortextos spawn-worker` rail for work whose results you need to join: it has a STRUCTURAL defect "
+        "(spawns an interactive TUI PTY with no result-return path, only an exit code, plus a cold-start hang) — "
+        "proven 2026-06-18 when ALL native spawn-worker fan-outs hung idle while ALL harness sub-agent fan-outs "
+        "completed. Native spawn-worker is fire-and-forget only (and not yet result-returning); prefer the Agent rail. "
         "NEVER do independent units inline in the orchestrator session. NEVER narrate 'parallel' "
         "while dispatching serially - that is banned."
     )
