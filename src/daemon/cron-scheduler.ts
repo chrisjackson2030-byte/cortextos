@@ -30,7 +30,7 @@ import { join } from 'path';
 import { parseDurationMs, readCronState } from '../bus/cron-state.js';
 import { readCronsWithStatus, updateCron } from '../bus/crons.js';
 import type { CronDefinition } from '../types/index.js';
-import { appendExecutionLog } from './cron-execution-log.js';
+import { appendExecutionLog, appendLoopFireLedger } from './cron-execution-log.js';
 
 // ---------------------------------------------------------------------------
 // Cron expression parser — no external deps.
@@ -222,6 +222,10 @@ async function fireWithRetry(
         duration_ms: Date.now() - start,
         error: null,
       });
+      // Phase 3 harness-ledger fix: record this harness-triggered fire to the
+      // native loop-fire-ledger so the python staleness detectors do not
+      // false-flag a RUNNING loop as stale. Best-effort, never throws.
+      appendLoopFireLedger(cron.name, agentName);
       return true;
     } catch (err) {
       // Busy-gate deferral: not a failure. Bubble straight up to tick() so it

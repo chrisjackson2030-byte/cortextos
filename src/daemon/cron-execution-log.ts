@@ -30,6 +30,7 @@ import {
   renameSync,
 } from 'fs';
 import { join, dirname } from 'path';
+import { homedir } from 'os';
 import { randomBytes } from 'crypto';
 import type { CronExecutionLogEntry } from '../types/index.js';
 import { cronExecutionLogPathFor } from '../bus/crons-schema.js';
@@ -129,5 +130,43 @@ export function appendExecutionLog(
     rotateIfNeeded(filePath);
   } catch {
     // Never crash the caller — execution logging is observational only.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Native loop-fire-ledger bridge (Phase 3 harness-ledger fix, 2026-06-18)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the native loop-fire-ledger path. The python-side staleness detectors
+ * (system_doctor, lane-health, reconciler) read this ledger to decide whether a
+ * loop fired within its SLA. Harness-triggered crons (daemon fires a prompt into
+ * an agent session) previously did NOT write it, so RUNNING loops looked stale.
+ * Overridable via CTX_LOOP_FIRE_LEDGER for deterministic tests.
+ */
+function loopFireLedgerPath(): string {
+  return process.env.CTX_LOOP_FIRE_LEDGER
+    ?? join(homedir(), 'cortextos-data', 'tools', 'loop-fire-ledger.jsonl');
+}
+
+/**
+ * Record a harness-triggered cron fire to the native loop-fire-ledger so the
+ * python-side detectors see it as a real, fresh fire (no manual backfill).
+ * Best-effort: must NEVER throw — a ledger I/O error must not disrupt scheduling.
+ * Appends one JSONL line: {name, ts, source:"daemon-cron-fire", agent}.
+ */
+export function appendLoopFireLedger(cronName: string, agentName: string): void {
+  try {
+    const filePath = loopFireLedgerPath();
+    ensureLogDir(filePath);
+    const record = {
+      name: cronName,
+      ts: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      source: 'daemon-cron-fire',
+      agent: agentName,
+    };
+    appendFileSync(filePath, JSON.stringify(record) + '\n', { encoding: 'utf-8' });
+  } catch {
+    // Never crash the scheduler — ledger recording is observational only.
   }
 }
