@@ -1,0 +1,197 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-06-18T20:49:59Z",
+  "generated_by": "jarvis",
+  "note": "Each capability maps to ONE primary_owner (RULES.md rule 2). active_implementation is the production call path; fallbacks are documented alternatives. lifecycle_status uses the same set as components (proposed, shadow, active, deprecated, retired, archived, unknown).",
+  "capabilities": [
+    {
+      "capability": "cron-scheduling",
+      "primary_owner": "service.cron-scheduler",
+      "active_implementation": "src/daemon/cron-scheduler.ts firing config.json crons array (24 crons)",
+      "alternative_or_fallback_implementations": ["launchd jobs (ai.jarvis.*) for OS-level scheduled scripts", "CronCreate H3 crash-recovery backups"],
+      "callers": ["service.daemon", "all daemon crons"],
+      "source_of_truth": "config.json crons array",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "completion-contract",
+      "primary_owner": "service.run-store",
+      "active_implementation": "src/bus/run-store.ts + src/daemon/run-contract.ts + worker-process exit handler (FEATURE_COMPLETION_CONTRACT, currently OFF -> SHADOW)",
+      "alternative_or_fallback_implementations": ["legacy: bare process exit code 0 = completed (flags OFF)"],
+      "callers": ["service.daemon (worker lifecycle)", "CLI verbs (create-run/get-run-by-trace)"],
+      "source_of_truth": "db.runs (runs.db)",
+      "lifecycle_status": "shadow"
+    },
+    {
+      "capability": "run-lease",
+      "primary_owner": "service.run-store",
+      "active_implementation": "lease_deadline column + join-run/expire-stale verbs (FEATURE_LEASE_JOIN, currently OFF -> SHADOW)",
+      "alternative_or_fallback_implementations": ["legacy: no lease; parent blocks on hung child until stall detector"],
+      "callers": ["service.daemon"],
+      "source_of_truth": "db.runs (runs.db lease_deadline)",
+      "lifecycle_status": "shadow"
+    },
+    {
+      "capability": "outcome-heartbeat",
+      "primary_owner": "service.run-store",
+      "active_implementation": "src/bus/outcome-hb.ts emitOutcomeHeartbeat on exit-without-envelope (FEATURE_OUTCOME_HB, currently OFF -> SHADOW)",
+      "alternative_or_fallback_implementations": ["legacy heartbeat: cortextos bus update-heartbeat (process-alive only)"],
+      "callers": ["service.daemon (worker exit handler)"],
+      "source_of_truth": "db.runs + heartbeat store",
+      "lifecycle_status": "shadow"
+    },
+    {
+      "capability": "trace-propagation",
+      "primary_owner": "service.run-store",
+      "active_implementation": "trace_id propagation + query-trace + canary-tick (FEATURE_TRACE_ID, currently OFF -> SHADOW)",
+      "alternative_or_fallback_implementations": ["none (legacy has no trace id)"],
+      "callers": ["service.daemon", "CLI get-run-by-trace"],
+      "source_of_truth": "db.runs (trace_id)",
+      "lifecycle_status": "shadow"
+    },
+    {
+      "capability": "feature-reachability-guard",
+      "primary_owner": "guard.feature-reachability",
+      "active_implementation": "src/utils/feature-reachability.ts scanning isFeatureEnabled call sites",
+      "alternative_or_fallback_implementations": [],
+      "callers": ["release process (ADR-0003)"],
+      "source_of_truth": "src/ scan result",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "embedded-sqlite-driver",
+      "primary_owner": "lib.better-sqlite3",
+      "active_implementation": "better-sqlite3 12.11.1 (SQLite 3.53.2) on branch jcv1-deps",
+      "alternative_or_fallback_implementations": ["better-sqlite3 11.10.0 (SQLite 3.49.2) on main — unpatched WAL-reset race, retirement target"],
+      "callers": ["db.runs", "db.sessions", "db.claims", "db.source_log", "db.halt_state"],
+      "source_of_truth": "package.json dependency pin",
+      "lifecycle_status": "shadow"
+    },
+    {
+      "capability": "credential-storage",
+      "primary_owner": "credential.keychain",
+      "active_implementation": "macOS Keychain via get_secret <name> helper (~/.zshrc)",
+      "alternative_or_fallback_implementations": [".env files for BOT_TOKEN/CHAT_ID/ALLOWED_USER (daemon-required, non-secret-grade)"],
+      "callers": ["all agents/lanes needing API keys"],
+      "source_of_truth": "macOS Keychain",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "telegram-comms",
+      "primary_owner": "integration.telegram",
+      "active_implementation": "fast-checker poll inbound + cortextos bus send-telegram outbound",
+      "alternative_or_fallback_implementations": ["agent inbox (send-message) for agent-to-agent"],
+      "callers": ["agent.jarvis"],
+      "source_of_truth": "Telegram API",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "agent-orchestration",
+      "primary_owner": "agent.jarvis",
+      "active_implementation": "cortextos bus send-message dispatch + task creation + fleet monitoring",
+      "alternative_or_fallback_implementations": ["spawn-worker / Agent subagents for parallel fan-out"],
+      "callers": ["B (via Telegram)"],
+      "source_of_truth": "task store + agent inboxes",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "memory-consolidation",
+      "primary_owner": "agent.jarvis",
+      "active_implementation": "/dream skill (Stop-hook + dream-consolidation cron) merging daily memory into durable topic files; memory-refresh cron (3h) + generate-session-context.py boot index",
+      "alternative_or_fallback_implementations": ["ai.jarvis.deep-dream launchd", "com.cortextos.memory-maintenance launchd"],
+      "callers": ["agent.jarvis", "session start"],
+      "source_of_truth": "memory/YYYY-MM-DD.md + ~/.claude/.../memory topic files; state/session-context.md (boot index projection)",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "options-trading",
+      "primary_owner": "trading.alpaca-options",
+      "active_implementation": "discordbot Alpaca options bot (ai.discordbot.agent) — KILL_SWITCH ARMED",
+      "alternative_or_fallback_implementations": [],
+      "callers": ["B (Discord)"],
+      "source_of_truth": "REAL Alpaca live broker (/v2/account)",
+      "lifecycle_status": "deprecated"
+    },
+    {
+      "capability": "prediction-markets",
+      "primary_owner": "trading.kalshi-sidewinder",
+      "active_implementation": "Sentinel paper lanes (ai.sentinel.kalshi-paper) — real-money FROZEN 2026-06-03",
+      "alternative_or_fallback_implementations": [],
+      "callers": ["jarvis lane", "Sentinel advisor"],
+      "source_of_truth": "REAL Kalshi account/settlements",
+      "lifecycle_status": "deprecated"
+    },
+    {
+      "capability": "prop-firm-trading",
+      "primary_owner": "trading.topstep",
+      "active_implementation": "ai.topstep.bot + shadow-feed (shadow/paper)",
+      "alternative_or_fallback_implementations": [],
+      "callers": ["jarvis lane", "Sentinel advisor"],
+      "source_of_truth": "REAL Topstep account",
+      "lifecycle_status": "shadow"
+    },
+    {
+      "capability": "shopify-store",
+      "primary_owner": "revenue.shopify-quiet-kiln",
+      "active_implementation": "shopify-operator cron (3h) + ai.jarvis.l1-shopify-runner + shopify-token-refresh",
+      "alternative_or_fallback_implementations": [],
+      "callers": ["agent.jarvis"],
+      "source_of_truth": "Shopify Admin (store eudvn4-c0)",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "edge-research",
+      "primary_owner": "agent.jarvis",
+      "active_implementation": "hunt-director cron (6h) + prospector-cycle + funnel_v2 forward-validation (revalidate.py); dispatched to specialists",
+      "alternative_or_fallback_implementations": ["ai.jarvis.judgment-engine", "ai.jarvis.hunt-director", "Nova analyst studies"],
+      "callers": ["agent.jarvis", "agent.nova"],
+      "source_of_truth": "funnel_v2 OOS verdicts + killed-edges registry (state/session-context.md)",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "edge-audit-service",
+      "primary_owner": "revenue.fiverr-edge-audit",
+      "active_implementation": "Fiverr gig (packaged 2026-06-13)",
+      "alternative_or_fallback_implementations": [],
+      "callers": ["external customers"],
+      "source_of_truth": "Fiverr account",
+      "lifecycle_status": "proposed"
+    },
+    {
+      "capability": "session-indexing",
+      "primary_owner": "db.sessions",
+      "active_implementation": "src/bus/indexer*.ts writing sessions.db (ai.jarvis.ingestion-engine)",
+      "alternative_or_fallback_implementations": ["transcript-embeddings.db (local embeddings for memory recall)"],
+      "callers": ["boot index generator", "memory recall"],
+      "source_of_truth": "sessions.db",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "loop-liveness-watchdog",
+      "primary_owner": "watchdog.loop-watchdog",
+      "active_implementation": "ai.jarvis.loop-watchdog + ai.jarvis.loop-liveness + ai.jarvis.cron-reconciler (launchd)",
+      "alternative_or_fallback_implementations": ["boot cron reconciliation (CronList on session start)"],
+      "callers": ["agent.jarvis (alerts)"],
+      "source_of_truth": "loop-fire-ledger / cron execution log",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "codex-runtime-fallback",
+      "primary_owner": "service.codex-fallback",
+      "active_implementation": "scripts/codex-fallback.sh (ai.jarvis.codex-fallback) rotating capped Codex agents to claude-code/sonnet",
+      "alternative_or_fallback_implementations": ["manual config.json runtime edit"],
+      "callers": ["agent.forge", "agent.hermes"],
+      "source_of_truth": "per-agent config.json runtime field + override stamp",
+      "lifecycle_status": "active"
+    },
+    {
+      "capability": "security-monitoring",
+      "primary_owner": "watchdog.security-monitor",
+      "active_implementation": "ai.cortextos.security-monitor + ai.cortextos.security-watchdog (launchd)",
+      "alternative_or_fallback_implementations": ["FEATURE_SANDBOX_CANARY (Gate H .sb profiles)", "security-self-upkeep cron (weekly)"],
+      "callers": ["agent.jarvis (alerts)"],
+      "source_of_truth": "unknown (security monitor output)",
+      "lifecycle_status": "active"
+    }
+  ]
+}
