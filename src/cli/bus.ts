@@ -9,6 +9,7 @@ import { validateAgentName, validateTaskId } from '../utils/validate.js';
 import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTaskDependencies, compactTasks, listTasks, checkStaleTasks, archiveTasks, checkHumanTasks, getTasksForRuntime, routeTask, discoverAgentRuntimes } from '../bus/task.js';
 import { saveOutput } from '../bus/save-output.js';
 import { logEvent } from '../bus/event.js';
+import { readLatestOutcomeHeartbeat, writeOutcomeHeartbeat } from '../bus/outcome-hb.js';
 import { updateHeartbeat, readAllHeartbeats, isHeartbeatStale } from '../bus/heartbeat.js';
 import { selfRestart, hardRestart, autoCommit, checkGoalStaleness, postActivity } from '../bus/system.js';
 import { createExperiment, runExperiment, evaluateExperiment, listExperiments, gatherContext, manageCycle, loadExperimentConfig } from '../bus/experiment.js';
@@ -637,17 +638,51 @@ busCommand
 busCommand
   .command('canary-tick')
   .action(() => {
-    if (!isFeatureEnabled('FEATURE_TRACE_ID')) {
+    const traceEnabled = isFeatureEnabled('FEATURE_TRACE_ID');
+    const outcomeEnabled = isFeatureEnabled('FEATURE_OUTCOME_HB');
+    const env = resolveEnv();
+    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
+    let emitted = 1;
+
+    if (!traceEnabled) {
+      logEvent(paths, env.agentName, env.org, 'action', 'canary_tick', 'info');
       console.log('FEATURE_TRACE_ID off');
+    } else {
+      emitted = 3;
+      const trace_id = `trace_${Date.now()}_${randomBytes(3).toString('hex')}`;
+      for (const eventName of ['canary_start', 'canary_work', 'canary_end']) {
+        logEvent(paths, env.agentName, env.org, 'action', eventName, 'info', { trace_id });
+      }
+      console.log(trace_id);
+    }
+
+    if (outcomeEnabled) {
+      writeOutcomeHeartbeat(env.agentName, 'canary_events', emitted, 1);
+      const heartbeat = readLatestOutcomeHeartbeat(env.agentName, 'canary_events');
+      if (heartbeat) console.log(JSON.stringify(heartbeat));
+    }
+  });
+
+busCommand
+  .command('outcome-status')
+  .argument('[metric]', 'Optional metric name')
+  .action((metric?: string) => {
+    if (!isFeatureEnabled('FEATURE_OUTCOME_HB')) {
+      console.log('FEATURE_OUTCOME_HB off');
       return;
     }
     const env = resolveEnv();
-    const paths = resolvePaths(env.agentName, env.instanceId, env.org);
-    const trace_id = `trace_${Date.now()}_${randomBytes(3).toString('hex')}`;
-    for (const eventName of ['canary_start', 'canary_work', 'canary_end']) {
-      logEvent(paths, env.agentName, env.org, 'action', eventName, 'info', { trace_id });
+    const heartbeat = readLatestOutcomeHeartbeat(env.agentName, metric);
+    if (!heartbeat) {
+      console.log('No outcome heartbeat found');
+      return;
     }
-    console.log(trace_id);
+    console.log(JSON.stringify({
+      metric: heartbeat.metric,
+      value: heartbeat.value,
+      min_expected: heartbeat.min_expected,
+      healthy: heartbeat.healthy,
+    }));
   });
 
 busCommand
