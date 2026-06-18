@@ -99,6 +99,17 @@ export interface Event {
   metadata: Record<string, unknown>;
 }
 
+export interface CompletionEnvelope {
+  run_id: string;
+  status: string;
+  result?: string;
+  artifacts?: string[];
+  blockers?: string[];
+  next_action?: string;
+  signature: string;
+  emitted_at: string;
+}
+
 // Heartbeat Types
 
 export interface Heartbeat {

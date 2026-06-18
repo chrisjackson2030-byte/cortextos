@@ -10,6 +10,7 @@ import { createTask, updateTask, completeTask, claimTask, readTaskAudit, checkTa
 import { saveOutput } from '../bus/save-output.js';
 import { logEvent } from '../bus/event.js';
 import { readLatestOutcomeHeartbeat, writeOutcomeHeartbeat } from '../bus/outcome-hb.js';
+import { completeRun, getRun, startRun } from '../bus/run-store.js';
 import { updateHeartbeat, readAllHeartbeats, isHeartbeatStale } from '../bus/heartbeat.js';
 import { selfRestart, hardRestart, autoCommit, checkGoalStaleness, postActivity } from '../bus/system.js';
 import { createExperiment, runExperiment, evaluateExperiment, listExperiments, gatherContext, manageCycle, loadExperimentConfig } from '../bus/experiment.js';
@@ -30,7 +31,7 @@ import { IPCClient } from '../daemon/ipc-server.js';
 import { TelegramAPI } from '../telegram/api.js';
 import { logOutboundMessage, cacheLastSent } from '../telegram/logging.js';
 import { checkHooksForBlock } from '../bus/hooks.js';
-import type { Priority, Task, TaskStatus, EventCategory, EventSeverity, ApprovalCategory, ApprovalStatus, OrgContext, CronDefinition } from '../types/index.js';
+import type { Priority, Task, TaskStatus, EventCategory, EventSeverity, ApprovalCategory, ApprovalStatus, OrgContext, CronDefinition, CompletionEnvelope } from '../types/index.js';
 
 /**
  * Run verify-deliverable.py against task result text + task description.
@@ -683,6 +684,69 @@ busCommand
       min_expected: heartbeat.min_expected,
       healthy: heartbeat.healthy,
     }));
+  });
+
+busCommand
+  .command('start-run')
+  .argument('[traceId]', 'Optional trace ID')
+  .action((traceId?: string) => {
+    if (!isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
+      console.log('FEATURE_COMPLETION_CONTRACT off');
+      return;
+    }
+    console.log(JSON.stringify(startRun(traceId)));
+  });
+
+busCommand
+  .command('complete-run')
+  .argument('<run_id>', 'Run ID')
+  .argument('<run_token>', 'Run token')
+  .option('--status <status>', 'Completion status', 'done')
+  .option('--result <text>', 'Completion result')
+  .option('--artifacts <items>', 'Comma-separated artifacts')
+  .option('--blockers <items>', 'Comma-separated blockers')
+  .option('--next-action <text>', 'Next action')
+  .action((
+    run_id: string,
+    run_token: string,
+    opts: { status?: string; result?: string; artifacts?: string; blockers?: string; nextAction?: string },
+  ) => {
+    if (!isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
+      console.log('FEATURE_COMPLETION_CONTRACT off');
+      return;
+    }
+    const parseCsv = (value?: string): string[] | undefined => {
+      if (!value) return undefined;
+      const items = value.split(',').map((item) => item.trim()).filter(Boolean);
+      return items.length > 0 ? items : undefined;
+    };
+    const envelope: CompletionEnvelope = {
+      run_id,
+      status: opts.status || 'done',
+      result: opts.result,
+      artifacts: parseCsv(opts.artifacts),
+      blockers: parseCsv(opts.blockers),
+      next_action: opts.nextAction,
+      signature: run_token,
+      emitted_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    };
+    try {
+      console.log(JSON.stringify(completeRun(envelope)));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  });
+
+busCommand
+  .command('get-run')
+  .argument('<run_id>', 'Run ID')
+  .action((run_id: string) => {
+    if (!isFeatureEnabled('FEATURE_COMPLETION_CONTRACT')) {
+      console.log('FEATURE_COMPLETION_CONTRACT off');
+      return;
+    }
+    console.log(JSON.stringify(getRun(run_id)));
   });
 
 busCommand
