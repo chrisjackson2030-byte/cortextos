@@ -1,0 +1,66 @@
+{
+  "change_id": "daemon-completion-contract-integration-2026-06-18",
+  "summary": "Wire the already-approved completion-contract/lease/trace/outcome F-G scope into the daemon worker lifecycle, fully flag-gated, all flags FALSE.",
+  "components_touched": [
+    "run-store (completion contract)",
+    "run-contract (daemon)",
+    "agent-manager",
+    "worker-process",
+    "ipc-server",
+    "cli/bus (complete-run)",
+    "feature-flags",
+    "FEATURE_COMPLETION_CONTRACT",
+    "FEATURE_LEASE_JOIN",
+    "FEATURE_TRACE_ID",
+    "FEATURE_OUTCOME_HB"
+  ],
+  "capabilities_affected": [
+    "run completion contract (signed envelope, state machine)",
+    "lease ownership + sweep",
+    "trace-id propagation",
+    "outcome heartbeat / productivity classification"
+  ],
+  "upstream_deps": [
+    "better-sqlite3@12.11.1 (SQLite 3.53.2, isolated worktree only)",
+    "src/utils/feature-flags.ts (isFeatureEnabled, per-call dynamic read)"
+  ],
+  "downstream_dependents": [
+    "agent-manager worker-spawn path",
+    "worker-process exit observer",
+    "ipc-server complete-run handler",
+    "cli/bus complete-run verb"
+  ],
+  "schedules_affected": [],
+  "dbs_and_files_affected": [
+    "control.db (runs table: additive columns only, no destructive migration)",
+    "orgs/main/agents/jarvis/state/jarvis-core/feature-flags.json"
+  ],
+  "credentials_and_permissions": {
+    "credentials_used": [],
+    "permissions_required": ["local daemon IPC socket (existing)"],
+    "new_or_escalated": false
+  },
+  "external_side_effects": [],
+  "revenue_or_trading_impact": {
+    "affected_lanes": [],
+    "money_at_risk": "none",
+    "irreversible": false
+  },
+  "duplicate_capability_check": {
+    "searched": true,
+    "existing_owner_found": "run-store completion contract (built CLI/library-only in the F-G sprint, never wired to the daemon) — primary_owner: run-store",
+    "decision": "extend"
+  },
+  "replacement_and_retirement_plan": {
+    "replaces": null,
+    "retirement_condition": "n/a (additive, flag-gated; legacy code 0 = completed path remains the default while flags are FALSE)",
+    "shadow_parity_window": "flags-FALSE legacy path stays live through PHASE 3 disposable testing and PHASE 5 one-flag-at-a-time activation; each flag proves a production call path before it stays on"
+  },
+  "tests": [
+    "tests/unit/bus/run-store-contract.test.ts",
+    "tests/integration/daemon-contract.test.ts",
+    "tests/unit/feature-reachability.test.ts"
+  ],
+  "canary": "PHASE 3: full 17-case disposable-daemon suite against a real daemon process on a separate CTX_INSTANCE_ID with throwaway state + db, no production schedules/secrets/trading/revenue. PENDING. Then PHASE 5 one-flag-at-a-time daemon activation with per-flag observation.",
+  "rollback": "Flags FALSE = legacy path (exit code 0 = completed), so no code revert is needed for rollback unless the off-path itself regresses. Full code revert if required: git revert 827f051 6b3f552 (on jcv1-deps). Dependency rollback is separate and isolated: revert 5788e1f -> npm ci -> better-sqlite3 11.10.0. Live checkout untouched throughout."
+}
