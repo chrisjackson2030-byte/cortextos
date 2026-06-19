@@ -225,7 +225,7 @@ async function fireWithRetry(
       // Phase 3 harness-ledger fix: record this harness-triggered fire to the
       // native loop-fire-ledger so the python staleness detectors do not
       // false-flag a RUNNING loop as stale. Best-effort, never throws.
-      appendLoopFireLedger(cron.name, agentName);
+      appendLoopFireLedger(cron.name, agentName, 'scheduler');
       return true;
     } catch (err) {
       // Busy-gate deferral: not a failure. Bubble straight up to tick() so it

@@ -150,20 +150,100 @@ function loopFireLedgerPath(): string {
 }
 
 /**
+ * Resolve the instance id for the current process. The production daemon runs
+ * under instance 'default'; test daemons and the E2E suite run under non-default
+ * instance ids (or none). This is the STRUCTURED key used to isolate production
+ * from non-production fires — far more robust than recognizing test agent names.
+ */
+function resolveInstanceId(): string {
+  return process.env.CTX_INSTANCE_ID || 'default';
+}
+
+/**
+ * Classify the fire environment from structured signals (NOT agent name):
+ *   - 'production'  when CTX_ENVIRONMENT === 'production', OR instance is 'default'
+ *   - 'simulation'  when CTX_ENVIRONMENT === 'simulation'
+ *   - 'test'        otherwise (any non-default instance / test fixture)
+ * An explicit CTX_ENVIRONMENT override always wins.
+ */
+export type FireEnvironment = 'production' | 'simulation' | 'test';
+
+export function resolveFireEnvironment(
+  instanceId: string = resolveInstanceId(),
+  envOverride: string | undefined = process.env.CTX_ENVIRONMENT,
+): FireEnvironment {
+  if (envOverride === 'production') return 'production';
+  if (envOverride === 'simulation') return 'simulation';
+  if (envOverride === 'test') return 'test';
+  // No explicit override: derive from the instance id.
+  if (instanceId === 'default') return 'production';
+  return 'test';
+}
+
+/**
+ * Structured shape of a loop-fire-ledger record (Phase 4 isolation, 2026-06-18).
+ * Legacy fields (name, ts, source, agent) are retained for back-compat with the
+ * python staleness detectors; the new structured fields enable production-vs-test
+ * duplicate isolation by FIELD, not by agent-name recognition.
+ */
+export interface LoopFireLedgerRecord {
+  // --- legacy / back-compat fields (do not remove — python detectors read these) ---
+  name: string;
+  ts: string;
+  source: string;
+  agent: string;
+  // --- structured isolation fields ---
+  instance_id: string;
+  environment: FireEnvironment;
+  agent_id: string;
+  schedule_id: string;
+  fire_id: string;
+  triggered_by: string;
+  timestamp: string;
+}
+
+/**
  * Record a harness-triggered cron fire to the native loop-fire-ledger so the
  * python-side detectors see it as a real, fresh fire (no manual backfill).
  * Best-effort: must NEVER throw — a ledger I/O error must not disrupt scheduling.
- * Appends one JSONL line: {name, ts, source:"daemon-cron-fire", agent}.
+ *
+ * Writes one JSONL line carrying BOTH the legacy fields ({name, ts, source,
+ * agent}) and the structured isolation fields ({instance_id, environment,
+ * agent_id, schedule_id, fire_id, triggered_by, timestamp}). The structured
+ * `environment` field is the canonical key used downstream to exclude
+ * test/simulation fires from production duplicate detection.
+ *
+ * @param cronName    - The stable schedule identifier (schedule_id).
+ * @param agentName   - The agent name (agent_id).
+ * @param triggeredBy - What initiated the fire. Defaults to 'scheduler' for the
+ *                      daemon cron-scheduler path; catch-up/manual can override.
  */
-export function appendLoopFireLedger(cronName: string, agentName: string): void {
+export function appendLoopFireLedger(
+  cronName: string,
+  agentName: string,
+  triggeredBy: string = 'scheduler',
+): void {
   try {
     const filePath = loopFireLedgerPath();
     ensureLogDir(filePath);
-    const record = {
+    const isoTs = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const instanceId = resolveInstanceId();
+    const environment = resolveFireEnvironment(instanceId);
+    const fireId = `${cronName}:${instanceId}:${isoTs}:${randomBytes(4).toString('hex')}`;
+    const record: LoopFireLedgerRecord = {
+      // legacy / back-compat
       name: cronName,
-      ts: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      ts: isoTs,
       source: 'daemon-cron-fire',
       agent: agentName,
+      // structured isolation
+      instance_id: instanceId,
+      environment,
+      agent_id: agentName,
+      schedule_id: cronName,
+      fire_id: fireId,
+      triggered_by: triggeredBy,
+      timestamp: isoTs,
     };
     appendFileSync(filePath, JSON.stringify(record) + '\n', { encoding: 'utf-8' });
   } catch {
