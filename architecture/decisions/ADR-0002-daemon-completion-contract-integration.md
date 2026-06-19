@@ -47,6 +47,41 @@ git revert 827f051 6b3f552
 
 With flags OFF the daemon uses the legacy path (code 0 = completed), so rollback does not require reverting code unless the off-path itself regresses.
 
+---
+
+## Gap-closure (reqs 3+4): durable run_events + WorkerFactory + instance flags
+
+- **Commit:** 6db4248 (`feat(daemon): durable run_events + WorkerFactory DI + instance-scoped flags`)
+- **Date:** 2026-06-18
+- **Status:** shadow (additive; default/production instance leaves the new env seams unset, so the live path is byte-identical to legacy)
+
+### What changed
+
+This closes B's requirements 3 (durable, authoritative terminal/join events instead of structural inference) and 4 (remove the env-var test seam; scope feature flags per instance).
+
+1. **Durable `run_events` table** (`src/bus/run-store.ts`). Additive SQLite table, authoritative source of truth for lifecycle events — no JSONL reliance, no harness event tables. Columns: `event_key TEXT PRIMARY KEY`, `run_id`, `parent_run_id`, `trace_id`, `event_type`, `terminal_state`, `payload_json TEXT NOT NULL DEFAULT '{}'`, `created_at`. Event keys are deterministic, which is what makes inserts idempotent on the PK.
+
+2. **`run_terminal` event.** Inserted by the lease-sweep (`expireStaleRuns`) CAS winner ONLY, in the SAME transaction as the `running -> stalled` `UPDATE ... RETURNING` flip. Idempotent on the PK `terminal:<run_id>:stalled` (`INSERT OR IGNORE`). The CAS loser flips nothing and emits no event, so a real multi-sweeper race yields exactly one transition and exactly one `run_terminal`.
+
+3. **`parent_join_resolved` event.** Emitted by `joinRun` when it FIRST observes the terminal child, in the join transaction. Idempotent on the PK `join-resolved:<parent_run_id>:<child_run_id>:<terminal_state>`. Repeated joins of an already-resolved child create no second event, no side effect, and no second worker.
+
+4. **`BEGIN IMMEDIATE` on the `expireStaleRuns` + `joinRun` transactions only** (`withDb` is unchanged). This fixes a DEFERRED-transaction read->write upgrade that surfaced `SQLITE_BUSY` and was being swallowed as a `null` result. Scoped to those two functions to keep blast radius minimal.
+
+5. **WorkerFactory dependency injection** (`src/pty/agent-pty.ts`, `src/daemon/worker-process.ts`, `src/daemon/agent-manager.ts`). A test-only injected `WorkerFactory` replaces the spawned command in tests. It is `null` on every production call site (`workerFactory ?? null`). This replaces the never-shipped env-var test-seam concept: `dist/daemon.js` has NO env-var test path — `grep CTX_TEST_WORKER_CMD` = 0 and `grep test-worker-factory` = 0 against the built daemon, so there is no arbitrary-exec env seam in production.
+
+6. **Instance-scoped feature flags.** Worker children thread `CTX_FEATURE_FLAGS_PATH` / `CTX_RUN_STORE_DB` from their OWN instance (`src/pty/agent-pty.ts`), so an isolated test instance resolves its own flags/db rather than the production paths. The default/production instance leaves these unset, so behavior is byte-identical to the legacy path.
+
+### Evidence
+
+- **Real concurrent race** (2 sweepers + 2 join callers, separate processes + separate db connections, 50 iterations): exactly one transition / one `run_terminal` / one `parent_join_resolved` per child, idempotent repeats, late completion rejected, 0 db errors, 0 duplicates, against the REAL `run_events` table (no harness tables). Evidence: `state/proof/gate-events-race-evidence-2026-06-18.json`.
+- **WorkerFactory + instance flags** (items 5b/5c/6 integration tests pass): `state/proof/gate-seam-flags-evidence-2026-06-18.json`.
+- **GATE 1+2** (real daemon process + real worker-spawn path): `state/proof/gate12-daemon-process-evidence-2026-06-18.json`.
+- **GATE 4** (clean-env regression + durability): full suite = 16 failures, all pre-existing flaky timing/perf (zero new vs the 16-baseline); WAL 74-writer (3700/3700) + 100-writer (5000/5000) lost=0 busy=0 integrity=ok; revenue smoke read-only clean (options-bot equity $1836.19 unchanged, pre-existing operator halt only); node-pty prebuild exec-bit is an npm-ci-restored artifact verified at cutover.
+
+### Rollback
+
+The new behavior is additive and instance-scoped. The default/production instance never sets `CTX_FEATURE_FLAGS_PATH` / `CTX_RUN_STORE_DB`, and `workerFactory` is `null` in production, so the flags-off legacy path is unaffected. To remove the gap-closure entirely: `git revert 6db4248`. The `run_events` table is additive (`CREATE TABLE IF NOT EXISTS`) and unread by the legacy path, so it is inert if left in place.
+
 ## Evidence That Would Reverse
 
 - Daemon canaries or disposable-daemon tests showing a completed run being lost or double-counted under the contract path.

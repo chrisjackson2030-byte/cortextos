@@ -1,0 +1,59 @@
+{
+  "change_id": "gap-closure-run-events-2026-06-18",
+  "summary": "Close B reqs 3+4: durable authoritative run_events table (run_terminal + parent_join_resolved, idempotent PK keys) + WorkerFactory DI (no env-var test seam in dist) + instance-scoped feature flags. Additive, instance-scoped, default/production path byte-identical to legacy.",
+  "components_touched": [
+    "run-store",
+    "agent-pty",
+    "worker-process",
+    "agent-manager"
+  ],
+  "capabilities_affected": [
+    "durable run events (authoritative SQLite run_events table)",
+    "lease-stall audit (run_terminal emitted by CAS winner in the running->stalled transaction)",
+    "parent join resolution (parent_join_resolved emitted when joinRun first observes the terminal child)",
+    "instance-scoped feature flags (workers thread CTX_FEATURE_FLAGS_PATH/CTX_RUN_STORE_DB from their own instance)"
+  ],
+  "upstream_deps": [
+    "better-sqlite3@12.11.1 (SQLite 3.53.2, isolated worktree only)",
+    "src/bus/run-store.ts (expireStaleRuns, joinRun, withDb)",
+    "src/pty/agent-pty.ts (AgentPTY, WorkerFactory type)"
+  ],
+  "downstream_dependents": [
+    "service.daemon (worker lifecycle)",
+    "worker-process spawn path",
+    "agent-manager worker-spawn call sites"
+  ],
+  "schedules_affected": [],
+  "dbs_and_files_affected": [
+    "runs.db (run_events table: additive CREATE TABLE IF NOT EXISTS, no destructive migration)"
+  ],
+  "credentials_and_permissions": {
+    "credentials_used": [],
+    "permissions_required": ["read/write runs.db (existing)"],
+    "new_or_escalated": false
+  },
+  "external_side_effects": [],
+  "revenue_or_trading_impact": {
+    "affected_lanes": [],
+    "money_at_risk": "none",
+    "irreversible": false
+  },
+  "duplicate_capability_check": {
+    "searched": true,
+    "existing_owner_found": "run lifecycle store (lease/join + completion contract) — primary_owner: service.run-store (ADR-0002)",
+    "decision": "extend"
+  },
+  "replacement_and_retirement_plan": {
+    "replaces": "never-shipped env-var test seam concept (CTX_TEST_WORKER_CMD); replaced by test-only injected WorkerFactory (null in production, grep=0 in dist/daemon.js)",
+    "retirement_condition": "n/a (env-var seam never shipped; run_events is additive and unread by the legacy flags-off path)",
+    "shadow_parity_window": "default/production instance leaves CTX_FEATURE_FLAGS_PATH/CTX_RUN_STORE_DB unset and workerFactory null -> byte-identical legacy; new events are inert until flags are flipped on per the ADR-0002 shadow window"
+  },
+  "tests": [
+    "tests/race/run-events-race.ts (2 sweepers + 2 join callers, 50 iterations, real run_events table) -> state/proof/gate-events-race-evidence-2026-06-18.json",
+    "tests/integration/worker-factory-and-instance-flags.test.ts -> state/proof/gate-seam-flags-evidence-2026-06-18.json",
+    "tests/integration/no-env-worker-seam.test.ts (dist/daemon.js grep CTX_TEST_WORKER_CMD = 0, grep test-worker-factory = 0)",
+    "GATE 1+2 real daemon process + worker-spawn path -> state/proof/gate12-daemon-process-evidence-2026-06-18.json"
+  ],
+  "canary": "Real concurrent race proven: exactly one transition / one run_terminal / one parent_join_resolved per child, idempotent repeats, late completion rejected, 0 db errors, 0 duplicates (gate-events-race-evidence-2026-06-18.json). GATE 4 clean-env suite = 16 failures (all pre-existing flaky timing/perf, zero new vs the 16-baseline); WAL 74-writer (3700/3700) + 100-writer (5000/5000) lost=0 busy=0 integrity=ok; revenue smoke read-only clean (options-bot equity $1836.19 unchanged).",
+  "rollback": "Additive + instance-scoped. Default/production instance leaves CTX_FEATURE_FLAGS_PATH/CTX_RUN_STORE_DB unset and workerFactory null, so the flags-off legacy path is unaffected. Full removal: git revert 6db4248. The run_events table is additive (CREATE TABLE IF NOT EXISTS) and unread by the legacy path, so it is inert if left in place."
+}

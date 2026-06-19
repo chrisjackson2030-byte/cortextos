@@ -578,7 +578,7 @@
       "component_id": "service.run-store",
       "name": "run-store (completion contract)",
       "type": "service",
-      "purpose": "SQLite-backed run lifecycle store. Records run_id/trace_id/run_token/status/lease_deadline; backs the signed CompletionEnvelope, idempotency, lease/join. Daemon + CLI writer.",
+      "purpose": "SQLite-backed run lifecycle store. Records run_id/trace_id/run_token/status/lease_deadline; backs the signed CompletionEnvelope, idempotency, lease/join. Also owns the authoritative durable run_events table (run_terminal, parent_join_resolved) with deterministic idempotent event keys. Daemon + CLI writer.",
       "owner": "cortextos-core",
       "status": "shadow",
       "source_code": "/Users/chrisjackson/cortextos/src/bus/run-store.ts; src/daemon/run-contract.ts",
@@ -598,11 +598,12 @@
         "db.runs"
       ],
       "data_written": [
-        "db.runs"
+        "db.runs",
+        "db.runs run_events (durable authoritative event log: run_terminal, parent_join_resolved; idempotent on event_key PK)"
       ],
-      "source_of_truth": "db.runs (runs.db)",
+      "source_of_truth": "db.runs (runs.db); run_events table for terminal/join lifecycle events",
       "schedules": [
-        "lease sweep / expire-stale"
+        "lease sweep / expire-stale (CAS winner emits run_terminal in the same running->stalled transaction)"
       ],
       "feature_flags": [
         "FEATURE_COMPLETION_CONTRACT",
@@ -620,11 +621,11 @@
         "none"
       ],
       "health_check": "canary-tick verbs; daemon canaries",
-      "tests": "tests/unit/bus/run-store.test.ts; tests/unit/bus/lease-join.test.ts; tests/unit/bus/outcome-hb.test.ts",
-      "rollback": "set all flags false (legacy: code 0 = completed); git revert 6b3f552/827f051",
-      "replacement_for": "implicit process-exit-as-completion (legacy)",
+      "tests": "tests/unit/bus/run-store.test.ts; tests/unit/bus/lease-join.test.ts; tests/unit/bus/outcome-hb.test.ts; tests/race/run-events-race.ts (real run_events concurrent race, 50/50; evidence state/proof/gate-events-race-evidence-2026-06-18.json)",
+      "rollback": "set all flags false (legacy: code 0 = completed); git revert 6b3f552/827f051; gap-closure (run_events + WorkerFactory + instance flags): git revert 6db4248 (run_events is additive CREATE TABLE IF NOT EXISTS, inert if left)",
+      "replacement_for": "implicit process-exit-as-completion (legacy); structural inference of terminal/join events (replaced by durable run_events)",
       "replaced_by": null,
-      "decision_record": "ADR-0002",
+      "decision_record": "ADR-0002 (gap-closure reqs 3+4: commit 6db4248)",
       "last_verified_at": "2026-06-18T20:49:59Z",
       "success_exit_codes": null,
       "warning_exit_codes": null,
