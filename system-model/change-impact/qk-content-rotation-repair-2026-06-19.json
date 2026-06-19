@@ -1,0 +1,28 @@
+{
+  "change_id": "qk-content-rotation-repair-2026-06-19",
+  "summary": "Fix Quiet Kiln daily poster re-posting the same clip every day; rotate through the full source pool.",
+  "components_touched": ["publishing.quiet-kiln (qk-daily-post.sh)"],
+  "capabilities_affected": ["organic social posting (YouTube, TikTok)"],
+  "upstream_deps": ["ai.jarvis.l1-shopify-runner (launchd, every 30m)"],
+  "downstream_dependents": ["YouTube Data API posts", "TikTok Content Posting API drafts"],
+  "schedules_affected": [],
+  "dbs_and_files_affected": [
+    "~/cortextos-data/tools/qk-daily-post.sh (pick_unposted rewrite + record_source; backup .bak-2026-06-19)",
+    "assets/persona-store/quietkiln/videos/post-*/.source (new consumption sidecars, backfilled)"
+  ],
+  "credentials_and_permissions": {"credentials_used": [], "permissions_required": [], "new_or_escalated": false},
+  "external_side_effects": ["youtube-post", "tiktok-draft"],
+  "revenue_or_trading_impact": {
+    "affected_lanes": ["revenue.shopify-quiet-kiln"],
+    "money_at_risk": "none",
+    "irreversible": false,
+    "note": "Content variety improves; no money at risk. Posts are organic. Each post is public but reversible (deletable); the fix only changes WHICH video is selected, not the posting mechanism."
+  },
+  "duplicate_capability_check": {"searched": true, "existing_owner_found": "publishing.quiet-kiln / qk-daily-post.sh (canonical poster, no overlapping publisher)", "decision": "extend"},
+  "replacement_and_retirement_plan": {"replaces": null, "retirement_condition": "n/a (in-place bug fix)", "shadow_parity_window": "n/a"},
+  "tests": ["isolation rotation simulation (10 sources x 15 days, no back-to-back repeats, cycles all, never exhausts) — state/proof/quiet-kiln-content-rotation-fix-2026-06-19.md"],
+  "canary": "pick_unposted verified to return v3-process-arc-bill.mp4 (new content) after fix+backfill, vs quietkiln-debut-01.mp4 before. Next live effect: 06-20 daily cycle.",
+  "rollback": "cp ~/cortextos-data/tools/qk-daily-post.sh.bak-2026-06-19 ~/cortextos-data/tools/qk-daily-post.sh (the .source sidecars are additive/inert if the old script returns).",
+  "owner": "L1 pilot (ai.jarvis.l1-shopify-runner)",
+  "verification_standard": "A platform PASS requires a real post with id/url, content matching the intended draft, and no duplicate (per B 2026-06-19). YouTube last verified post: youtube.com/shorts/nmM0W8NOo74 (2026-06-19T00:06Z)."
+}
