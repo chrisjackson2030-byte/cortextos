@@ -25,6 +25,28 @@ interface IPtySpawnOptions {
 type SpawnFn = (file: string, args: string[], options: IPtySpawnOptions) => IPty;
 
 /**
+ * WorkerFactory — an injectable override for the command/args the PTY spawns.
+ *
+ * PRODUCTION: never set. AgentPTY falls back to its real claude command
+ * (getBinaryName() + buildClaudeArgs()) and the production daemon never
+ * constructs an AgentPTY with a factory. There is NO env-var-selectable test
+ * path: the command an agent/worker runs cannot be replaced via process.env.
+ *
+ * TESTS ONLY: a test harness (under tests/) may pass a factory that returns a
+ * deterministic worker command (e.g. a node one-liner). The factory replaces
+ * ONLY the file+args; the rest of the spawn path — node-pty spawn, child env
+ * construction, getBaseEnv keeplist, extraEnv injection, onData/onExit, the
+ * WorkerProcess IPC + run-store completion handler — is exercised unchanged.
+ */
+export interface WorkerCommand {
+  /** Executable to spawn (absolute path or PATH-resolvable name). */
+  cmd: string;
+  /** Argument vector passed to the executable. */
+  args: string[];
+}
+export type WorkerFactory = (mode: 'fresh' | 'continue', prompt: string) => WorkerCommand;
+
+/**
  * Manages a single Claude Code PTY session.
  * Replaces the tmux session management in agent-wrapper.sh.
  */
@@ -36,11 +58,24 @@ export class AgentPTY {
   private config: AgentConfig;
   private onExitHandler: ((exitCode: number, signal?: number) => void) | null = null;
   private spawnFn: SpawnFn | null = null;
+  /**
+   * Optional test-only override for the spawned command. Null in production
+   * (the daemon never sets it). When present, supplies the file+args in place of
+   * the real claude command; every other part of the spawn path is unchanged.
+   */
+  private workerFactory: WorkerFactory | null = null;
 
-  constructor(env: CtxEnv, config: AgentConfig, logPath?: string, bootstrapPattern?: string) {
+  constructor(
+    env: CtxEnv,
+    config: AgentConfig,
+    logPath?: string,
+    bootstrapPattern?: string,
+    workerFactory?: WorkerFactory | null,
+  ) {
     this.env = env;
     this.config = config;
     this.outputBuffer = new OutputBuffer(1000, logPath, bootstrapPattern);
+    this.workerFactory = workerFactory ?? null;
   }
 
   /**
@@ -126,6 +161,29 @@ export class AgentPTY {
       }
     }
 
+    // INSTANCE-SCOPED FLAG + RUN-STORE RESOLUTION (item 6).
+    //
+    // The clean-env keeplist (getBaseEnv) intentionally drops CTX_* vars, so a
+    // child PTY — and any `cortextos bus complete-run` subprocess it launches —
+    // would otherwise resolve feature flags and the run-store DB from the
+    // hardcoded PRODUCTION default path, NOT from the instance that spawned it.
+    // That makes a worker on a non-default instance read the wrong flags (e.g.
+    // it would see FEATURE_COMPLETION_CONTRACT from the production file instead
+    // of its own instance), breaking instance isolation.
+    //
+    // Fix: thread the spawning daemon's own CTX_FEATURE_FLAGS_PATH and
+    // CTX_RUN_STORE_DB into the child env so the worker resolves the SAME
+    // instance's flags + run-store as the daemon. The daemon derives these from
+    // its CTX_INSTANCE_ID at boot. In the default/production instance these vars
+    // are typically unset, so the child falls back to the default path — which
+    // is the correct default behavior (byte-identical to before).
+    if (process.env.CTX_FEATURE_FLAGS_PATH) {
+      ptyEnv['CTX_FEATURE_FLAGS_PATH'] = process.env.CTX_FEATURE_FLAGS_PATH;
+    }
+    if (process.env.CTX_RUN_STORE_DB) {
+      ptyEnv['CTX_RUN_STORE_DB'] = process.env.CTX_RUN_STORE_DB;
+    }
+
     // Add convenience CTX_* aliases used throughout agent templates.
     // CTX_TELEGRAM_CHAT_ID: alias for CHAT_ID from the agent's .env
     if (ptyEnv['CHAT_ID']) {
@@ -156,8 +214,16 @@ export class AgentPTY {
     // env is passed natively via node-pty options; no bash export commands required.
     // On Windows, npm global installs create .cmd wrappers, not .exe binaries.
     // node-pty's CreateProcess requires the exact wrapper name to resolve correctly.
-    const claudeArgs = this.buildClaudeArgs(mode, prompt);
-    let claudeCmd = this.getBinaryName();
+    // Resolve the command to spawn. PRODUCTION: workerFactory is null, so this
+    // is the real claude command (getBinaryName + buildClaudeArgs), unchanged.
+    // TEST-ONLY: an injected factory supplies a deterministic command; the
+    // sandbox/env/onData/onExit path below is identical in both cases.
+    const claudeArgs = this.workerFactory
+      ? this.workerFactory(mode, prompt).args
+      : this.buildClaudeArgs(mode, prompt);
+    let claudeCmd = this.workerFactory
+      ? this.workerFactory(mode, prompt).cmd
+      : this.getBinaryName();
 
     // sandbox-exec wrapping — macOS only, opt-in via config.json sandbox_profile
     if (this.config.sandbox_profile && platform() === 'darwin') {

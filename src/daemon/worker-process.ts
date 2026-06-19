@@ -2,6 +2,7 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import type { CtxEnv, WorkerStatus, WorkerStatusValue } from '../types/index.js';
 import { AgentPTY } from '../pty/agent-pty.js';
+import type { WorkerFactory } from '../pty/agent-pty.js';
 import { injectMessage } from '../pty/inject.js';
 import { isFeatureEnabled } from '../utils/feature-flags.js';
 import { classifyWorkerExit, emitOutcomeHeartbeat } from './run-contract.js';
@@ -34,18 +35,27 @@ export class WorkerProcess {
    * Undefined on the legacy path.
    */
   private runId: string | undefined;
+  /**
+   * Test-only spawn-command override. Null in production — the daemon
+   * constructs WorkerProcess without it, so the real claude command is used.
+   * A test harness may pass a deterministic factory; it is forwarded to the
+   * AgentPTY and replaces ONLY the spawned command, not the spawn path.
+   */
+  private workerFactory: WorkerFactory | null;
 
   constructor(
     name: string,
     dir: string,
     parent: string | undefined,
     log?: (msg: string) => void,
+    workerFactory?: WorkerFactory | null,
   ) {
     this.name = name;
     this.dir = dir;
     this.parent = parent;
     this.spawnedAt = new Date().toISOString();
     this.log = log || ((msg) => console.log(`[worker:${name}] ${msg}`));
+    this.workerFactory = workerFactory ?? null;
   }
 
   /**
@@ -64,7 +74,7 @@ export class WorkerProcess {
     this.runId = env.extraEnv?.CTX_RUN_ID;
 
     const logPath = join(env.ctxRoot, 'logs', this.name, 'stdout.log');
-    this.pty = new AgentPTY(env, config, logPath);
+    this.pty = new AgentPTY(env, config, logPath, undefined, this.workerFactory);
 
     this.pty.onExit((code) => {
       this.exitCode = code;

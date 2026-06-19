@@ -3,6 +3,7 @@ import { join, relative } from 'path';
 import type { AgentConfig, AgentStatus, CtxEnv, BusPaths, WorkerStatus, TelegramMessage } from '../types/index.js';
 import { AgentProcess } from './agent-process.js';
 import { WorkerProcess } from './worker-process.js';
+import type { WorkerFactory } from '../pty/agent-pty.js';
 import { FastChecker } from './fast-checker.js';
 import { CronScheduler } from './cron-scheduler.js';
 import { migrateCronsForAgent } from './cron-migration.js';
@@ -1111,7 +1112,14 @@ export class AgentManager {
   /**
    * Spawn an ephemeral worker session for a parallelized task.
    */
-  async spawnWorker(name: string, dir: string, prompt: string, parent?: string, model?: string): Promise<void> {
+  async spawnWorker(
+    name: string,
+    dir: string,
+    prompt: string,
+    parent?: string,
+    model?: string,
+    workerFactory?: WorkerFactory | null,
+  ): Promise<void> {
     if (this.workers.has(name)) {
       throw new Error(`Worker "${name}" is already running`);
     }
@@ -1120,7 +1128,10 @@ export class AgentManager {
     }
 
     const log = (msg: string) => console.log(`[worker:${name}] ${msg}`);
-    const worker = new WorkerProcess(name, dir, parent, log);
+    // workerFactory is undefined on every production call site (IPC server /
+    // CLI spawn-worker). It is supplied ONLY by the test harness, which forwards
+    // a deterministic command override down to the AgentPTY spawn path.
+    const worker = new WorkerProcess(name, dir, parent, log, workerFactory ?? null);
 
     const env: CtxEnv = {
       instanceId: this.instanceId,

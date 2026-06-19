@@ -33,6 +33,34 @@ const RUNS_SCHEMA = `
   )
 `;
 
+// ---------------------------------------------------------------------------
+// Durable run events (run_events)
+// ---------------------------------------------------------------------------
+//
+// Additive event log table. The SQLite run_events table is AUTHORITATIVE — no
+// reliance on any JSONL sidecar. `event_key` is a deterministic primary key so
+// retries are idempotent: a PK collision is a no-op (INSERT OR IGNORE). Two
+// event types are emitted by this module:
+//   - run_terminal: emitted by the lease-sweep (expireStaleRuns) CAS winner, in
+//     the SAME transaction as the running->stalled flip. One per row that
+//     actually transitioned. event_key = `terminal:<run_id>:<terminal_state>`.
+//   - parent_join_resolved: emitted by joinRun when it FIRST observes the
+//     terminal child and returns the typed result, in the same transaction as
+//     the read/return. event_key =
+//     `join-resolved:<parent_run_id>:<child_run_id>:<terminal_state>`.
+const RUN_EVENTS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS run_events (
+    event_key TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    parent_run_id TEXT,
+    trace_id TEXT,
+    event_type TEXT NOT NULL,
+    terminal_state TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+  )
+`;
+
 // Additive columns introduced by the completion-contract data layer.
 // Each is applied via try/catch ALTER (idempotent on existing DBs).
 const ADDITIVE_COLUMNS: Array<[string, string]> = [
@@ -317,6 +345,7 @@ function withDb<T>(fn: (db: InstanceType<typeof Database>) => T): T | null {
     db.pragma('busy_timeout = 5000');
     db.pragma('synchronous = NORMAL');
     db.exec(RUNS_SCHEMA);
+    db.exec(RUN_EVENTS_SCHEMA);
     for (const [col, type] of ADDITIVE_COLUMNS) {
       try {
         db.exec(`ALTER TABLE runs ADD COLUMN ${col} ${type}`);
@@ -844,41 +873,150 @@ export function getRunByTrace(trace_id: string): RunRecord | null {
   );
 }
 
+/** A row returned by the lease-sweep RETURNING clause. */
+type SweptRow = {
+  run_id: string;
+  parent_run_id: string | null;
+  trace_id: string | null;
+};
+
 /**
- * Expire stale running runs whose lease has passed. Atomic conditional
- * UPDATE so exactly one sweeper wins per row. Mirrors lease_deadline (legacy)
- * and lease_expires_at (new) — checks both.
+ * Expire stale running runs whose lease has passed. Runs inside a SINGLE
+ * transaction (withDb): atomically transitions overdue `running` rows to
+ * `stalled` via UPDATE ... RETURNING, then for EACH row that actually
+ * transitioned inserts exactly one durable `run_terminal` event in the SAME
+ * transaction — so the STALLED flip and its event commit (or roll back)
+ * together, atomically.
+ *
+ * Concurrency contract:
+ *   - Only the CAS winner inserts: a competing sweeper whose UPDATE matches 0
+ *     rows gets an empty RETURNING set and inserts nothing.
+ *   - Retrying the sweep creates no duplicate event (event_key PK +
+ *     INSERT OR IGNORE).
+ *   - The SQLite run_events table is authoritative; no JSONL reliance.
+ *
+ * Returns the count of rows transitioned (same return contract as before).
  */
 export function expireStaleRuns(): number {
-  const result = withDb((db) =>
-    db
-      .prepare(
-        `UPDATE runs
-         SET status = 'stalled'
-         WHERE status = 'running'
-           AND (
-             (lease_expires_at IS NOT NULL AND lease_expires_at < ?)
-             OR (lease_expires_at IS NULL AND lease_deadline IS NOT NULL AND lease_deadline < ?)
-           )`,
-      )
-      .run(nowIso(), nowIso()).changes,
-  );
+  const result = withDb((db) => {
+    const sweep = db.transaction(() => {
+      const ts = nowIso();
+      const swept = db
+        .prepare(
+          `UPDATE runs
+             SET status = 'stalled'
+           WHERE status = 'running'
+             AND (
+               (lease_expires_at IS NOT NULL AND lease_expires_at < ?)
+               OR (lease_expires_at IS NULL AND lease_deadline IS NOT NULL AND lease_deadline < ?)
+             )
+           RETURNING run_id, parent_run_id, trace_id`,
+        )
+        .all(ts, ts) as SweptRow[];
+
+      for (const row of swept) {
+        emitRunTerminal(db, row);
+      }
+      return swept.length;
+    });
+    // IMMEDIATE so the write lock is taken at BEGIN, not on upgrade from a read.
+    // Under concurrency a DEFERRED txn that reads-then-writes can return
+    // SQLITE_BUSY on the lock upgrade WITHOUT honoring busy_timeout; IMMEDIATE
+    // makes contenders queue on busy_timeout and serialize cleanly.
+    return sweep.immediate();
+  });
   return result ?? 0;
 }
 
 export function joinRun(run_id: string): RunRecord | null {
   return withDb((db) => {
-    const select = db.prepare('SELECT * FROM runs WHERE run_id = ?');
-    const existing = toRunRecord(select.get(run_id) as RawRunRow | undefined);
-    if (!existing) return null;
-    if (TERMINAL_STATUSES.has(existing.status)) return existing;
+    const join = db.transaction(() => {
+      const select = db.prepare('SELECT * FROM runs WHERE run_id = ?');
+      const existing = toRunRecord(select.get(run_id) as RawRunRow | undefined);
+      if (!existing) return null;
 
-    const now = nowIso();
-    const lease = existing.lease_expires_at ?? existing.lease_deadline;
-    if (lease && lease < now) {
-      attemptTransition(db, run_id, ['running'], 'stalled');
-      return toRunRecord(select.get(run_id) as RawRunRow | undefined);
-    }
-    return existing;
+      // Already terminal on entry: this join OBSERVES the terminal child and
+      // resolves it. Emit parent_join_resolved (idempotent on PK), same txn.
+      if (TERMINAL_STATUSES.has(existing.status)) {
+        emitParentJoinResolved(db, existing);
+        return existing;
+      }
+
+      const now = nowIso();
+      const lease = existing.lease_expires_at ?? existing.lease_deadline;
+      if (lease && lease < now) {
+        // joinRun itself may transition the overdue running child to stalled.
+        // Whoever WINS the running->stalled CAS owns the terminal transition and
+        // emits run_terminal (idempotent PK, so the lease-sweep and joinRun never
+        // double-insert). The CAS loser flipped nothing and emits no run_terminal.
+        const flippedHere = attemptTransition(db, run_id, ['running'], 'stalled');
+        if (flippedHere) {
+          emitRunTerminal(db, {
+            run_id: existing.run_id,
+            parent_run_id: existing.parent_run_id,
+            trace_id: existing.trace_id,
+          });
+        }
+        const after = toRunRecord(select.get(run_id) as RawRunRow | undefined);
+        if (after && TERMINAL_STATUSES.has(after.status)) {
+          emitParentJoinResolved(db, after);
+        }
+        return after;
+      }
+      // Still running within lease: not yet resolved, no event.
+      return existing;
+    });
+    // IMMEDIATE: take the write lock at BEGIN so concurrent join/sweep callers
+    // queue on busy_timeout instead of failing the read->write lock upgrade.
+    return join.immediate();
   });
+}
+
+/**
+ * Insert exactly one durable `run_terminal` event for a row that just won the
+ * running->stalled CAS. event_key = `terminal:<run_id>:stalled`. Idempotent on
+ * its PK (INSERT OR IGNORE), so a retried sweep or a joinRun-driven flip never
+ * creates a second row. MUST be called inside the same transaction as the flip.
+ */
+function emitRunTerminal(
+  db: InstanceType<typeof Database>,
+  row: { run_id: string; parent_run_id: string | null; trace_id: string | null },
+): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO run_events (
+       event_key, run_id, parent_run_id, trace_id, event_type,
+       terminal_state, payload_json, created_at
+     ) VALUES (?, ?, ?, ?, 'run_terminal', 'stalled', '{}', ?)`,
+  ).run(
+    `terminal:${row.run_id}:stalled`,
+    row.run_id,
+    row.parent_run_id,
+    row.trace_id,
+    nowIso(),
+  );
+}
+
+/**
+ * Insert exactly one durable `parent_join_resolved` event recording that the
+ * parent join observed and resolved this terminal child. Idempotent on its PK
+ * (`join-resolved:<parent_run_id>:<child_run_id>:<terminal_state>`): repeated
+ * joinRun calls re-run this INSERT OR IGNORE and create NO second row, so they
+ * fire NO second side effect (no duplicate parent notification, no duplicate
+ * task, no second worker). parent_run_id is read from the child row.
+ */
+function emitParentJoinResolved(db: InstanceType<typeof Database>, child: RunRecord): void {
+  const parentId = child.parent_run_id ?? '';
+  db.prepare(
+    `INSERT OR IGNORE INTO run_events (
+       event_key, run_id, parent_run_id, trace_id, event_type,
+       terminal_state, payload_json, created_at
+     ) VALUES (?, ?, ?, ?, 'parent_join_resolved', ?, '{}', ?)`,
+  ).run(
+    `join-resolved:${parentId}:${child.run_id}:${child.status}`,
+    child.run_id,
+    child.parent_run_id,
+    child.trace_id,
+    child.status,
+    nowIso(),
+  );
 }
