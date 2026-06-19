@@ -161,9 +161,10 @@ function resolveInstanceId(): string {
 
 /**
  * Classify the fire environment from structured signals (NOT agent name):
- *   - 'production'  when CTX_ENVIRONMENT === 'production', OR instance is 'default'
+ *   - 'production'  when CTX_ENVIRONMENT === 'production', OR (default instance
+ *                   AND not running under a test runtime)
  *   - 'simulation'  when CTX_ENVIRONMENT === 'simulation'
- *   - 'test'        otherwise (any non-default instance / test fixture)
+ *   - 'test'        under vitest/NODE_ENV=test, OR any non-default instance
  * An explicit CTX_ENVIRONMENT override always wins.
  */
 export type FireEnvironment = 'production' | 'simulation' | 'test';
@@ -175,6 +176,12 @@ export function resolveFireEnvironment(
   if (envOverride === 'production') return 'production';
   if (envOverride === 'simulation') return 'simulation';
   if (envOverride === 'test') return 'test';
+  // A test runtime is NEVER production, even on the default instance. Without
+  // this, a vitest test that calls appendLoopFireLedger on the default instance
+  // writes environment='production' to the shared ledger and defeats the
+  // isolation. The production daemon does not run under vitest, so its
+  // classification is unaffected.
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return 'test';
   // No explicit override: derive from the instance id.
   if (instanceId === 'default') return 'production';
   return 'test';
