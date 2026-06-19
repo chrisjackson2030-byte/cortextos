@@ -614,6 +614,15 @@ export interface CtxEnv {
   projectRoot: string;
   timezone?: string;
   orchestrator?: string;
+  /**
+   * Extra environment variables to inject into the spawned PTY process, on top
+   * of the standard CTX_* set. Used ONLY by the daemon completion-contract path
+   * (gated by FEATURE_COMPLETION_CONTRACT) to pass CTX_RUN_ID / CTX_RUN_TOKEN /
+   * CTX_TRACE_ID / CTX_PARENT_RUN_ID / CTX_LEASE_DEADLINE /
+   * CTX_COMPLETION_SCHEMA_VERSION. Absent on the legacy path. The raw run token
+   * lives ONLY here (worker process env) — never in argv/prompt/logs/events.
+   */
+  extraEnv?: Record<string, string>;
 }
 
 // Bus Path Types
@@ -657,7 +666,8 @@ export type IPCCommandType =
   | 'add-cron'
   | 'update-cron'
   | 'remove-cron'
-  | 'fleet-health';
+  | 'fleet-health'
+  | 'complete-run';
 
 // ---------------------------------------------------------------------------
 // Execution log pagination response — Subtask 4.3
@@ -766,7 +776,15 @@ export interface IPCRequest {
 
 // Worker Types
 
-export type WorkerStatusValue = 'starting' | 'running' | 'completed' | 'failed';
+export type WorkerStatusValue =
+  | 'starting'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  // Set ONLY under FEATURE_COMPLETION_CONTRACT when a worker's process exits
+  // without a valid recorded completion envelope. The bare exit is an EVENT,
+  // not a success: the lease sweep resolves the run's terminal state.
+  | 'exited_without_completion';
 
 export interface WorkerStatus {
   name: string;

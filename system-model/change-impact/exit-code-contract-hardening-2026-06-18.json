@@ -1,0 +1,71 @@
+{
+  "change_id": "exit-code-contract-hardening-2026-06-18",
+  "summary": "Correct ai.jarvis.reconciler from 'failing' to healthy (exit 2 = drift-fixed by design) from evidence, and add an exit-code contract to every executable component so nonzero-exit-as-failure misreads cannot recur.",
+  "components_touched": [
+    "watchdog.reconciler",
+    "agent.jarvis",
+    "agent.nova",
+    "agent.forge",
+    "agent.hermes",
+    "agent.friday",
+    "agent.atlas",
+    "service.daemon",
+    "service.cron-scheduler",
+    "service.fast-checker",
+    "service.run-store",
+    "service.codex-fallback",
+    "watchdog.loop-watchdog",
+    "watchdog.security-monitor",
+    "guard.feature-reachability",
+    "launchd.daemon",
+    "launchd.fleet-jobs-registry-note"
+  ],
+  "capabilities_affected": [
+    "registry exit-code classification (new pure helper classifyExitCode/isFailureExit)",
+    "desired-state reconciliation health classification"
+  ],
+  "upstream_deps": [
+    "/Users/chrisjackson/cortextos-data/tools/desired-state-reconciler.py (read-only, source of the exit-code convention)",
+    "~/Library/LaunchAgents/ai.jarvis.reconciler.plist (read-only, launchd contract: --once, StartInterval 300)",
+    "launchctl list (LastExitStatus evidence)"
+  ],
+  "downstream_dependents": [
+    "any registry reader or watchdog that classifies a component's last exit code",
+    "tests/unit/registry-exit-code-classification.test.ts"
+  ],
+  "schedules_affected": [],
+  "dbs_and_files_affected": [
+    "system-model/components.json",
+    "system-model/dependencies.json",
+    "system-model/eight-pillar-map.md",
+    "src/utils/exit-code-classifier.ts",
+    "tests/unit/registry-exit-code-classification.test.ts",
+    "architecture/decisions/ADR-0004-exit-code-contract-hardening.md"
+  ],
+  "credentials_and_permissions": {
+    "credentials_used": [],
+    "permissions_required": ["read-only inspection of plist, script, logs, launchctl"],
+    "new_or_escalated": false
+  },
+  "external_side_effects": [],
+  "revenue_or_trading_impact": {
+    "affected_lanes": [],
+    "money_at_risk": "none",
+    "irreversible": false
+  },
+  "duplicate_capability_check": {
+    "searched": true,
+    "existing_owner_found": "no existing exit-code classifier in src/utils (checked: feature-flags, feature-reachability, cron-health, validate); none classify exit codes",
+    "decision": "build-new (justified: minimal pure helper, no prior owner)"
+  },
+  "replacement_and_retirement_plan": {
+    "replaces": null,
+    "retirement_condition": "n/a (additive registry fields + new helper + doc corrections)",
+    "shadow_parity_window": "n/a"
+  },
+  "tests": [
+    "tests/unit/registry-exit-code-classification.test.ts"
+  ],
+  "canary": "Pure-function helper + registry-record assertions only; no daemon/production behavior touched. The reconciler plist and script were read-only this change. Verified live evidence: launchctl LastExitStatus=512 (exit 2), reconciler.err.log size 0, out.log tail '[reconciler] exit=2 (drift-fixed)'.",
+  "rollback": "git revert <this commit> on jcv1-deps. All changes additive (registry fields, one new src/utils helper, one new test, ADR-0004, doc-prose edits). No runtime, daemon, launchd, secret, or production-state change to undo; live checkout and production jobs untouched."
+}
