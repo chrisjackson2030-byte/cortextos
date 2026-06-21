@@ -26,6 +26,26 @@ Permanent Jarvis Core requirement. These rules govern every change Jarvis (or an
 
 10. **No nightly self-update creates new infrastructure without the change-impact gate.** No nightly/autonomous self-update may create a new service, cron, agent, database, permission, credential, or external action without passing the CHANGE-IMPACT REPORT gate below. The nightly reconciliation is PROPOSE-ONLY (see below); it never silently creates or deletes production.
 
+11. **An acknowledgement is not completion. A promise to work requires a tracked object.** (B directive, 2026-06-21.) Acking a request ("on it", "working on it", "I will...") is not the same as doing it, and is not the same as completing it. Any outbound message that PROMISES future work must be backed by a tracked object: a `task_id`, a `run_id`, or a `commitment_id`. A bare promise with no tracked object is a discipline failure because the work has no durable handle and can silently vanish. This rule is encoded in the Jarvis comms policy (GUARDRAILS.md WS3) and checked advisorily by `tools/ack_protocol_check.py` (see ENFORCEMENT below).
+
+---
+
+## ENFORCEMENT RULES (point-of-action gates)
+
+These convert the 11 rules into concrete, fire-at-decision-time gates. They are not separate from the rules; they are how the rules are enforced.
+
+- **No new component without a capability search.** (Rule 1.) Before creating any component, search `capabilities.json` and the wider ecosystem for an existing owner. The CHANGE-IMPACT REPORT's `duplicate_capability_check.searched` must be `true` and record the result. A `build-new` decision when an existing owner was found is gate-blocked unless explicitly justified.
+
+- **No replacement without an old-path retirement condition.** (Rules 4 to 6.) You may not introduce a new implementation of an existing capability without naming the `replaces` component AND the explicit `retirement_condition` for the old path. A migration with the old path still running unrecorded is incomplete.
+
+- **No "live" claim without a production-call-path proof.** (Rule release criterion 1, ADR-0003, INC-2026-06-18.) A component or feature may not be marked `active`/live in the registry until a real production entry point (daemon / CLI / cron / hook) is demonstrably reached. Feature flags being `true` in `feature-flags.json` is necessary but not sufficient; the reachability guard (`src/utils/feature-reachability.ts`) plus a daemon-level or end-to-end test is the proof.
+
+- **No unknown component modified without investigation.** (Rules 8 to 9.) A component at `status="unknown"` is investigated to known-state BEFORE any modification. You never claim to understand, repair, or replace an unknown component.
+
+- **Nightly reconciliation is read-only and propose-only.** (Rule 10.) The nightly desired-state / registry reconciliation compares documented vs reality and emits PROPOSE-ONLY records. It never auto-creates, auto-deletes, or auto-rewrites production ownership. Live mutation requires a passed CHANGE-IMPACT REPORT (and, where the action-gradient requires, B approval).
+
+- **A promise needs a tracked object.** (Rule 11.) Run `tools/ack_protocol_check.py` advisorily on any outbound B-message that contains a future-work phrase. If it flags (commitment phrase, no `task_id`/`run_id`/`commitment_id`), attach a tracked object before the promise is treated as real work. Advisory, not a hard block.
+
 ---
 
 ## CHANGE-IMPACT REPORT (machine-readable format)

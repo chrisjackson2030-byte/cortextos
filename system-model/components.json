@@ -1,8 +1,10 @@
 {
   "schema_version": "1.0",
   "generated_at": "2026-06-18T20:49:59Z",
+  "updated_at": "2026-06-21T00:00:00Z",
   "generated_by": "jarvis",
   "note": "INITIAL registry for the Jarvis System Model + Change-Impact Gate. Field 'status' is restricted to the lifecycle set: proposed, shadow, active, deprecated, retired, archived, unknown. Components Jarvis cannot fully verify are marked status=unknown per RULES.md rule 8 (no claim-to-understand an unknown component). last_verified_at is the timestamp of the discovery pass that confirmed the record, or null where unverified.",
+  "phase2_update_note": "2026-06-21 Phase 2 finish-sprint: (1) added 4 disk-verified components (publishing.topstep-notifier, data.headline-log, metric.run-goodput, tool.ack-protocol-check); (2) flag drift correction: production feature-flags.json now has FEATURE_TRACE_ID/OUTCOME_HB/COMPLETION_CONTRACT/LEASE_JOIN = true (was all-false at commit 7623880); current_value fields and run-store/db.runs status updated to reflect the live cutover. FEATURE_DOCTOR_GOODPUT + FEATURE_SANDBOX_CANARY remain false. SoT for flags = state/jarvis-core/feature-flags.json (src/utils/feature-flags.ts hardcoded path).",
   "field_spec": [
     "component_id",
     "name",
@@ -580,7 +582,8 @@
       "type": "service",
       "purpose": "SQLite-backed run lifecycle store. Records run_id/trace_id/run_token/status/lease_deadline; backs the signed CompletionEnvelope, idempotency, lease/join. Also owns the authoritative durable run_events table (run_terminal, parent_join_resolved) with deterministic idempotent event keys. Daemon + CLI writer.",
       "owner": "cortextos-core",
-      "status": "shadow",
+      "status": "active",
+      "status_note": "Lifted shadow->active 2026-06-21: FEATURE_COMPLETION_CONTRACT + FEATURE_LEASE_JOIN + FEATURE_TRACE_ID + FEATURE_OUTCOME_HB are all true in production feature-flags.json (was all-false/shadow at commit 7623880). The completion contract is now the live production call path via the daemon worker exit handler (ADR-0002 cutover commit 7623880).",
       "source_code": "/Users/chrisjackson/cortextos/src/bus/run-store.ts; src/daemon/run-contract.ts",
       "runtime_process": "in-process (daemon worker + CLI)",
       "entry_points": [
@@ -885,9 +888,10 @@
       "component_id": "db.runs",
       "name": "runs.db",
       "type": "database",
-      "purpose": "Run-store: run lifecycle records (run_id, trace_id, run_token, status, result, artifacts, blockers, lease_deadline). Backs completion contract.",
+      "purpose": "Run-store: run lifecycle records (run_id, trace_id, run_token, status, result, artifacts, blockers, lease_deadline) + the authoritative run_events table. Backs completion contract.",
       "owner": "cortextos-core",
-      "status": "shadow",
+      "status": "active",
+      "status_note": "Lifted shadow->active 2026-06-21 alongside service.run-store: the completion-contract flags are live in production feature-flags.json.",
       "source_code": "schema in src/bus/run-store.ts (RUNS_SCHEMA)",
       "runtime_process": "SQLite WAL (better-sqlite3)",
       "entry_points": [
@@ -1413,8 +1417,9 @@
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": "ADR-0002",
-      "last_verified_at": "2026-06-18T20:49:59Z",
-      "current_value": false
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "current_value": true,
+      "current_value_note": "true in production state/jarvis-core/feature-flags.json as of 2026-06-21 (was false at commit 7623880). SoT = the flags file."
     },
     {
       "component_id": "flag.FEATURE_OUTCOME_HB",
@@ -1450,8 +1455,9 @@
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": "ADR-0002",
-      "last_verified_at": "2026-06-18T20:49:59Z",
-      "current_value": false
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "current_value": true,
+      "current_value_note": "true in production state/jarvis-core/feature-flags.json as of 2026-06-21 (was false at commit 7623880). Drives run_goodput outcome heartbeat (run-contract.ts emitOutcomeHeartbeat). SoT = the flags file."
     },
     {
       "component_id": "flag.FEATURE_DOCTOR_GOODPUT",
@@ -1530,8 +1536,9 @@
       "replacement_for": "implicit process-exit-as-completion",
       "replaced_by": null,
       "decision_record": "ADR-0002",
-      "last_verified_at": "2026-06-18T20:49:59Z",
-      "current_value": false
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "current_value": true,
+      "current_value_note": "true in production state/jarvis-core/feature-flags.json as of 2026-06-21 (was false at commit 7623880). Completion contract is LIVE: a process exit is an EVENT, not an auto-completion. SoT = the flags file."
     },
     {
       "component_id": "flag.FEATURE_LEASE_JOIN",
@@ -1573,8 +1580,9 @@
       "replacement_for": null,
       "replaced_by": null,
       "decision_record": "ADR-0002",
-      "last_verified_at": "2026-06-18T20:49:59Z",
-      "current_value": false
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "current_value": true,
+      "current_value_note": "true in production state/jarvis-core/feature-flags.json as of 2026-06-21 (was false at commit 7623880). Lease+join LIVE: a hung child's lease expires so the parent unblocks STALLED. SoT = the flags file."
     },
     {
       "component_id": "flag.FEATURE_SANDBOX_CANARY",
@@ -1934,6 +1942,207 @@
       "last_exit_code": null,
       "last_productive_run": null,
       "last_verified_status": "unknown"
+    },
+    {
+      "component_id": "publishing.topstep-notifier",
+      "name": "Topstep notifier (once-per-day dedup)",
+      "type": "watchdog",
+      "purpose": "Reads the Topstep bot event stream and sends B a Telegram alert on meaningful events (EOD flatten, consistency-cap/EOD once-per-day, halts). Cross-process once-per-trading-day dedup: persisted in a cursor JSON (byte offset + dedup state keyed on (day, kind)); a new UTC trading day resets it. Some kinds are always suppressed (latch re-statements); B 2026-06-21 added fingerprint/root-reason dedup for incidents.",
+      "owner": "jarvis",
+      "status": "active",
+      "source_code": "/Users/chrisjackson/cortextos-data/tools/topstep-bot/topstep-notifier.py",
+      "runtime_process": "ai.jarvis.topstep-notifier (launchd, StartInterval 60s; venv python)",
+      "entry_points": [
+        "launchd ai.jarvis.topstep-notifier (every 60s)"
+      ],
+      "dependencies": [
+        "trading.topstep",
+        "integration.telegram"
+      ],
+      "dependents": [
+        "agent.jarvis (B alerts)"
+      ],
+      "data_read": [
+        "Topstep bot event log",
+        "notifier cursor JSON (dedup state)"
+      ],
+      "data_written": [
+        "notifier cursor JSON (dedup state: byte offset + (day,kind) sent set)",
+        "Telegram alerts"
+      ],
+      "source_of_truth": "notifier cursor JSON for already-sent dedup state; REAL Topstep account for the underlying facts",
+      "schedules": [
+        "ai.jarvis.topstep-notifier (launchd, 60s)"
+      ],
+      "feature_flags": [],
+      "permissions": [
+        "read Topstep event log; send Telegram"
+      ],
+      "credentials_used": [
+        "BOT_TOKEN (Telegram)"
+      ],
+      "external_side_effects": [
+        "Telegram alerts to B"
+      ],
+      "health_check": "launchctl list ai.jarvis.topstep-notifier; tests/test_topstep_notifier_status.py (co-located)",
+      "tests": "/Users/chrisjackson/cortextos-data/tools/topstep-bot/test_topstep_notifier_status.py",
+      "rollback": "launchctl bootout the plist; restore prior topstep-notifier.py",
+      "replacement_for": "earlier topstep status notifiers (ai.jarvis.topstep-status, topstep-monday-status; both .disabled-2026-06-16)",
+      "replaced_by": null,
+      "decision_record": null,
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "success_exit_codes": null,
+      "warning_exit_codes": null,
+      "failure_exit_codes": null,
+      "exit_code_meanings": {
+        "note": "exit-code contract not pulled this pass (launchctl LastExitStatus not read); dedup logic + plist verified on disk. Investigate before classifying any nonzero exit (RULES.md rule 8)."
+      },
+      "last_exit_code": null,
+      "last_productive_run": null,
+      "last_verified_status": "active-exit-contract-unverified"
+    },
+    {
+      "component_id": "data.headline-log",
+      "name": "Sentinel headline-log (H3 latency data)",
+      "type": "database",
+      "purpose": "Durable, append-only, timestamped headline+entity JSONL log for the edge engine's H3 study (headline-to-equity latency lead). STRICTLY read-only data collection. Every unique news item the Sentinel news poller already fetches gets one JSONL line (ts_seen anchor, published_at, source, headline, url). Does NOT trade, order, call a broker, change a credential, publish, hit a paid API, or add a source. Approved by B 2026-06-21.",
+      "owner": "jarvis",
+      "status": "active",
+      "source_code": "~/.openclaw/workspace/financial-advisor/sentinel_news_poller.py (function persist_news_event); README at ~/cortextos-data/sentinel/headline-log-README.md",
+      "runtime_process": "ai.jarvis.sentinel-news-poller (launchd, every 5 min) appends via persist_news_event",
+      "entry_points": [
+        "sentinel_news_poller.persist_news_event (once per uniquely-seen headline)"
+      ],
+      "dependencies": [
+        "sentinel news poller (existing free RSS feeds + local Glint signal file)"
+      ],
+      "dependents": [
+        "edge-research (H3 latency study, forward-maturing)"
+      ],
+      "data_read": [
+        "self (study reads back the JSONL)"
+      ],
+      "data_written": [
+        "~/cortextos-data/sentinel/headline-log.jsonl (append-only)"
+      ],
+      "source_of_truth": "self (point-in-time ts_seen records; cannot be reconstructed after the fact)",
+      "schedules": [
+        "ai.jarvis.sentinel-news-poller (launchd, 5 min)"
+      ],
+      "feature_flags": [],
+      "permissions": [
+        "append-only file write; read-only feeds"
+      ],
+      "credentials_used": [],
+      "external_side_effects": [
+        "none (read-only data collection; no trade/order/publish/paid-API/credential change)"
+      ],
+      "health_check": "headline-log.jsonl line count + latest ts_seen freshness (63 lines, latest 2026-06-21T21:34Z observed)",
+      "tests": "unknown (data-collection sidecar)",
+      "rollback": "stop the poller append; the JSONL is additive/inert",
+      "replacement_for": null,
+      "replaced_by": null,
+      "decision_record": null,
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "path": "/Users/chrisjackson/cortextos-data/sentinel/headline-log.jsonl"
+    },
+    {
+      "component_id": "metric.run-goodput",
+      "name": "run_goodput outcome metric",
+      "type": "service",
+      "purpose": "Outcome-quality heartbeat. On a contract worker finishing, emitOutcomeHeartbeat maps the run's classifyOutcome result to a heartbeat value: only PRODUCTIVE is healthy (value 1, min 1); exit-without-envelope or non-productive is UNHEALTHY (value 0 < min 1). A status=completed run can never auto-produce a healthy heartbeat without satisfying its expected-outcome contract. This is the goodput check referenced in the system-model brief.",
+      "owner": "service.run-store",
+      "status": "active",
+      "source_code": "/Users/chrisjackson/cortextos/src/daemon/run-contract.ts (emitOutcomeHeartbeat, writeOutcomeHeartbeat 'run_goodput'); classifyOutcome",
+      "runtime_process": "in-process (daemon worker exit handler)",
+      "entry_points": [
+        "emitOutcomeHeartbeat(agent, runId, exitedWithoutCompletion) on worker finish (gated on FEATURE_OUTCOME_HB)"
+      ],
+      "dependencies": [
+        "service.run-store",
+        "db.runs",
+        "flag.FEATURE_OUTCOME_HB"
+      ],
+      "dependents": [
+        "service.daemon (worker exit handler)",
+        "flag.FEATURE_DOCTOR_GOODPUT (system-doctor goodput gate, currently false)"
+      ],
+      "data_read": [
+        "db.runs (getRun + classifyOutcome)"
+      ],
+      "data_written": [
+        "outcome heartbeat store ('run_goodput' metric)"
+      ],
+      "source_of_truth": "db.runs (the run record drives classifyOutcome); the heartbeat is a derived signal",
+      "schedules": [],
+      "feature_flags": [
+        "FEATURE_OUTCOME_HB",
+        "FEATURE_DOCTOR_GOODPUT"
+      ],
+      "permissions": [],
+      "credentials_used": [],
+      "external_side_effects": [],
+      "health_check": "FEATURE_OUTCOME_HB live (true); run-contract tests",
+      "tests": "tests/unit/bus/outcome-hb.test.ts (per run-store record)",
+      "rollback": "set FEATURE_OUTCOME_HB false",
+      "replacement_for": "process-exit-as-success (a bare completed exit no longer implies a healthy outcome)",
+      "replaced_by": null,
+      "decision_record": "ADR-0002",
+      "last_verified_at": "2026-06-21T00:00:00Z"
+    },
+    {
+      "component_id": "tool.ack-protocol-check",
+      "name": "ack-protocol check (Jarvis comms linter)",
+      "type": "service",
+      "purpose": "Advisory linter enforcing RULES.md rule 11 / GUARDRAILS WS3 reflex 5: 'An acknowledgement is not completion; a promise to work requires a tracked object (task_id/run_id/commitment_id).' Given an outbound B-message, flags any future-work/commitment phrase ('on it', 'working on', 'I will', 'building', 'starting now', etc.) that has no associated tracked-object id. Advisory (a check), not a hard block.",
+      "owner": "agent.jarvis",
+      "status": "active",
+      "source_code": "/Users/chrisjackson/cortextos/orgs/main/agents/jarvis/tools/ack_protocol_check.py",
+      "runtime_process": "on-demand CLI / library import (pre-send check)",
+      "entry_points": [
+        "python3 ack_protocol_check.py < msg | --text '...' | --json",
+        "from ack_protocol_check import check_message"
+      ],
+      "dependencies": [],
+      "dependents": [
+        "agent.jarvis (pre-send comms discipline)"
+      ],
+      "data_read": [
+        "the outbound message text (stdin/--text)"
+      ],
+      "data_written": [
+        "stdout result (text or JSON)"
+      ],
+      "source_of_truth": "self (deterministic regex classification)",
+      "schedules": [],
+      "feature_flags": [],
+      "permissions": [],
+      "credentials_used": [],
+      "external_side_effects": [],
+      "health_check": "tools/test_ack_protocol_check.py (12 tests pass 2026-06-21)",
+      "tests": "/Users/chrisjackson/cortextos/orgs/main/agents/jarvis/tools/test_ack_protocol_check.py",
+      "rollback": "remove tool + test (additive, no runtime dependency)",
+      "replacement_for": null,
+      "replaced_by": null,
+      "decision_record": "architecture/decisions/ADR-0005-ack-protocol-and-phase2-system-model-finish.md",
+      "last_verified_at": "2026-06-21T00:00:00Z",
+      "success_exit_codes": [
+        0
+      ],
+      "warning_exit_codes": [
+        3
+      ],
+      "failure_exit_codes": [
+        1
+      ],
+      "exit_code_meanings": {
+        "0": "OK (clean / promise carries a tracked id / purely factual)",
+        "3": "FLAG (commitment phrase with no tracked id; advisory, not a hard block)",
+        "1": "usage/runtime error (could not read input)"
+      },
+      "last_exit_code": 0,
+      "last_productive_run": "2026-06-21T00:00:00Z",
+      "last_verified_status": "healthy"
     }
   ]
 }
