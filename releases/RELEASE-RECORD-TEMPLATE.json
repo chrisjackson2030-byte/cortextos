@@ -1,0 +1,51 @@
+{
+  "release_id": "<short-slug>-YYYY-MM-DD",
+  "title": "<one line: what this release is>",
+  "category": "nightly-safe-update | weekly-behavior-release | human-approval",
+  "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "created_by": "<agent or human>",
+  "status": "draft | reviewed | canary | promoted | rolled-back",
+  "from_proposal": "releases/proposals/<proposal_id>.json",
+
+  "what_changed": "Concrete description of the change. Files, components, behavior.",
+  "why": "The reason. The problem it solves or the improvement it makes. Evidence, not aspiration.",
+
+  "tests": {
+    "eval_test_gate": "PASS | FAIL",
+    "test_refs": ["test path/name proving the change"],
+    "test_output_ref": "path to captured test output / proof note"
+  },
+
+  "reviewer": {
+    "required": true,
+    "independent_reviewer": "<who> (must be different from author for behavior changes)",
+    "reviewed_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "verdict": "approve | reject | changes-requested",
+    "notes": ""
+  },
+
+  "canary": {
+    "required": true,
+    "plan": "How the change is canaried before full promotion.",
+    "result": "PASS | FAIL | n/a",
+    "observed": "What was observed during canary (evidence, not assumption)."
+  },
+
+  "change_impact_report_ref": "system-model/change-impact/<change_id>.json (REQUIRED, see RULES.md)",
+
+  "rollback_command": "Exact command(s) to undo. Demonstrated, not aspirational.",
+  "rollback_demonstrated": false,
+
+  "release_notes": "Human-readable summary of what shipped and the operator impact.",
+
+  "human_approved": false,
+  "human_approved_by": null,
+  "human_approved_at": null,
+
+  "promotion": {
+    "auto_promote": false,
+    "promoted": false,
+    "promoted_by": null,
+    "promoted_at": null
+  }
+}

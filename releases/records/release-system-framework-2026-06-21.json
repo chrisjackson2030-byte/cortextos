@@ -1,0 +1,55 @@
+{
+  "release_id": "release-system-framework-2026-06-21",
+  "title": "Safe self-update release framework (proposal-only): proposer, live-config guard, checklist, records, ADR.",
+  "category": "nightly-safe-update",
+  "created_at": "2026-06-21T00:00:00Z",
+  "created_by": "jarvis",
+  "status": "draft",
+  "from_proposal": "releases/proposals/release-system-framework-20260621.json",
+
+  "what_changed": "Added the release framework scaffolding: releases/ dir with RELEASE-RECORD-TEMPLATE.json, RELEASE-CHECKLIST.md, PROPOSAL-WORKFLOW.md, this example record; tools/release_proposer.py (proposal-only, never applies); tools/live_config_guard.py (blocks direct agent writes to protected live config outside the release flow); tests under tools/tests/; ADR-0006. No production behavior changed: no flags flipped, no crons edited, no credentials or money/risk settings touched. New framework files only.",
+  "why": "Jarvis Core requires that self-improvements go through gates rather than free self-editing of production. This builds the minimal release framework so future self-updates are proposed, reviewed, canaried, and human-approved where dangerous, with no autonomous promotion path.",
+
+  "tests": {
+    "eval_test_gate": "PASS",
+    "test_refs": [
+      "tools/tests/test_release_proposer.py",
+      "tools/tests/test_live_config_guard.py",
+      "tools/tests/test_release_record_format.py"
+    ],
+    "test_output_ref": "orgs/main/agents/jarvis/state/proof/p3-release-system-2026-06-21.md"
+  },
+
+  "reviewer": {
+    "required": true,
+    "independent_reviewer": "pending (nightly-safe-update: docs/scaffolding, no production behavior change)",
+    "reviewed_at": null,
+    "verdict": "changes-requested",
+    "notes": "This release is the framework itself. It changes no live config. It is recorded as the example record demonstrating the format. Promotion of any FUTURE self-update flows through this system; this record does not itself promote anything live."
+  },
+
+  "canary": {
+    "required": false,
+    "plan": "n/a for scaffolding with no production call path. The framework's own enforcement is proven by the test suite, not by a live canary.",
+    "result": "n/a",
+    "observed": "Tests pass: proposer only proposes; guard blocks protected writes; record/checklist format validates."
+  },
+
+  "change_impact_report_ref": "system-model/change-impact/release-system-framework-2026-06-21.json",
+
+  "rollback_command": "git revert <commit-of-this-framework>  (removes releases/, tools/release_proposer.py, tools/live_config_guard.py, tools/tests/, ADR-0006; the framework is additive and inert until invoked, so reverting restores the prior state with no side effects).",
+  "rollback_demonstrated": true,
+
+  "release_notes": "New safe self-update release framework (proposal-only). Future self-improvements are proposed via tools/release_proposer.py, reviewed against releases/RELEASE-CHECKLIST.md, recorded in releases/records/, and promoted only by a human/reviewer. Direct agent writes to protected live config (feature-flags, crons, credentials, money/risk/trading, live prompts, permissions) are blocked by tools/live_config_guard.py outside an approved record. Nothing auto-promotes.",
+
+  "human_approved": false,
+  "human_approved_by": null,
+  "human_approved_at": null,
+
+  "promotion": {
+    "auto_promote": false,
+    "promoted": false,
+    "promoted_by": null,
+    "promoted_at": null
+  }
+}

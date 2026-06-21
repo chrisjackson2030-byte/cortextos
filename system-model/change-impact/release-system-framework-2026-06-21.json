@@ -1,0 +1,46 @@
+{
+  "change_id": "release-system-framework-2026-06-21",
+  "summary": "Add the proposal-only safe self-update release framework (proposer, live-config guard, checklist, records, ADR-0006). No production behavior changed.",
+  "components_touched": [
+    "tools/release_proposer.py (new, proposal-only)",
+    "tools/live_config_guard.py (new, protected-path guard)",
+    "releases/ (new scaffolding: template, checklist, workflow spec, example record)"
+  ],
+  "capabilities_affected": ["self-update / release management (new gated capability)"],
+  "upstream_deps": ["system-model/RULES.md (CHANGE-IMPACT + RELEASE CRITERION)", "ADR-0003 (production-call-path rule)"],
+  "downstream_dependents": [],
+  "schedules_affected": [],
+  "dbs_and_files_affected": [
+    "releases/RELEASE-RECORD-TEMPLATE.json (new)",
+    "releases/RELEASE-CHECKLIST.md (new)",
+    "releases/PROPOSAL-WORKFLOW.md (new)",
+    "releases/records/release-system-framework-2026-06-21.json (new, example record)",
+    "tools/release_proposer.py (new)",
+    "tools/live_config_guard.py (new)",
+    "tools/tests/test_release_proposer.py (new)",
+    "tools/tests/test_live_config_guard.py (new)",
+    "tools/tests/test_release_record_format.py (new)",
+    "architecture/decisions/ADR-0006-safe-self-update-release-system.md (new)"
+  ],
+  "credentials_and_permissions": {"credentials_used": [], "permissions_required": [], "new_or_escalated": false},
+  "external_side_effects": [],
+  "revenue_or_trading_impact": {
+    "affected_lanes": [],
+    "money_at_risk": "none",
+    "irreversible": false,
+    "note": "Framework files only. No flags flipped, no crons edited, no credentials or money/risk/trading settings touched. Additive and inert until invoked."
+  },
+  "duplicate_capability_check": {
+    "searched": true,
+    "existing_owner_found": "RULES.md already specifies a PROPOSE-ONLY nightly reconciliation + CHANGE-IMPACT gate, but no executable release-proposer/guard existed. This extends that spec into running tooling.",
+    "decision": "extend"
+  },
+  "replacement_and_retirement_plan": {"replaces": null, "retirement_condition": "n/a (new capability)", "shadow_parity_window": "n/a"},
+  "tests": [
+    "tools/tests/test_release_proposer.py (proposer only proposes, never applies; protected path auto-escalates to human-approval)",
+    "tools/tests/test_live_config_guard.py (protected path is BLOCKED; non-protected path ALLOWED)",
+    "tools/tests/test_release_record_format.py (record + checklist format validates)"
+  ],
+  "canary": "n/a for scaffolding. Enforcement proven by the test suite, not a live canary. No production call path is being promoted.",
+  "rollback": "git revert <commit-of-this-framework> (removes releases/, tools/release_proposer.py, tools/live_config_guard.py, tools/tests/, ADR-0006). Additive and inert; revert restores prior state with no side effects."
+}

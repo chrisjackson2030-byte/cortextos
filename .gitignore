@@ -71,3 +71,10 @@ bus/__pycache__/
 *-auth.json
 **/*cookies*.json
 **/*.session
+
+# sandbox-canary enforcement test scratch (auto-cleaned, never commit)
+.sandbox-canary-scratch/
+
+# Python bytecode for release tooling
+tools/**/__pycache__/
+__pycache__/
