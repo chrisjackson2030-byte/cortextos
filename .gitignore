@@ -78,3 +78,13 @@ bus/__pycache__/
 # Python bytecode for release tooling
 tools/**/__pycache__/
 __pycache__/
+*.pyc
+
+# Test run artifacts (wave/item result JSONs written by test harnesses)
+tests/.item*-result.json
+
+# Editor/backup strays (e.g. bus/*.bak-skill-router-*)
+*.bak-*
+
+# Creator-mining research data (downloaded media, captions; belongs in cortextos-data)
+research/
