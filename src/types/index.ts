@@ -229,6 +229,16 @@ export interface AgentConfig {
    * macOS only. Absent = no sandboxing (existing behaviour preserved).
    */
   sandbox_profile?: string;
+  /**
+   * SANDBOX CANARY scope marker (Gate H / FEATURE_SANDBOX_CANARY).
+   * When true, AND the FEATURE_SANDBOX_CANARY flag is enabled, this single
+   * low-risk agent is launched under its sandbox_profile. This is the canary
+   * scope: only the agent(s) with this flag set are sandboxed, never fleet-wide.
+   * When FEATURE_SANDBOX_CANARY is false (default), sandbox wrapping is dormant
+   * for ALL agents regardless of sandbox_profile, so current behaviour is
+   * byte-identical until the orchestrator activates the flag after review.
+   */
+  sandbox_canary?: boolean;
 }
 
 export interface CronEntry {

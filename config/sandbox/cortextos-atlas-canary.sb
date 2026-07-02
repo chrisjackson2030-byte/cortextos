@@ -1,5 +1,9 @@
-; cortextOS Specialist Agent Sandbox Profile
-; Agent types: atlas, forge, analyst (and future specialists)
+; cortextOS SANDBOX CANARY Profile (Gate H, FEATURE_SANDBOX_CANARY)
+; Agent types: ONE low-risk canary agent only (atlas). NOT fleet-wide.
+; Activation is gated by config.sandbox_canary=true AND FEATURE_SANDBOX_CANARY=true.
+; Adds explicit credential containment on top of the specialist isolation:
+; the canary agent is denied Keychain + securityd at file + mach layers, and is
+; denied the planted fake canary secret directory used by the credential tests.
 ;
 ; Required parameters (-D flags when invoking sandbox-exec):
 ;   AGENT_DIR        — absolute path to agent working dir
@@ -127,6 +131,26 @@
 ; ── Gate H canary: explicit credential containment (deny Keychain + securityd) ──
 (deny file-read* (subpath (string-append (param "HOME_DIR") "/Library/Keychains")))
 (deny file-read* (subpath "/Library/Keychains"))
+(deny file-read* (subpath "/private/var/db/SystemKey"))
 (deny mach-lookup (global-name "com.apple.SecurityServer"))
 (deny mach-lookup (global-name "com.apple.securityd"))
 (deny mach-lookup (global-name "com.apple.secd"))
+
+; ── Plaintext on-disk secret containment (B 2026-06-22, security-review HIGH fix) ──
+; The broad read-allow left plaintext creds readable. Deny the real on-disk secret
+; stores so the sandbox contains credentials, not just the encrypted Keychain.
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.aws")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.ssh")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.gnupg")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.config/gh")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.config/gcloud")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.docker")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.kube")))
+
+
+; ── Fake-canary-secret containment (test-only deny path) ─────────────────────
+; FAKE_CANARY_DIR points at a directory holding a PLANTED FAKE secret (never a
+; real credential). The credential red-team test plants a fake secret here and
+; proves the sandboxed agent cannot read it. Defaults to the sentinel when unset
+; so production launches are unaffected.
+(deny file-read* (subpath (param "FAKE_CANARY_DIR")))

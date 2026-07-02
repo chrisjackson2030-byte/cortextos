@@ -85,3 +85,13 @@
 (deny mach-lookup (global-name "com.apple.SecurityServer"))
 (deny mach-lookup (global-name "com.apple.securityd"))
 (deny mach-lookup (global-name "com.apple.secd"))
+
+; ── Plaintext on-disk secret containment (B 2026-06-22, security-review HIGH fix) ──
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.aws")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.ssh")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.gnupg")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.config/gh")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.config/gcloud")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.docker")))
+(deny file-read* (subpath (string-append (param "HOME_DIR") "/.kube")))
+

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import { platform } from 'os';
 import type { AgentConfig, CtxEnv } from '../types/index.js';
 import { OutputBuffer } from './output-buffer.js';
+import { isFeatureEnabled } from '../utils/feature-flags.js';
 
 // node-pty types
 interface IPty {
@@ -225,8 +226,22 @@ export class AgentPTY {
       ? this.workerFactory(mode, prompt).cmd
       : this.getBinaryName();
 
-    // sandbox-exec wrapping — macOS only, opt-in via config.json sandbox_profile
-    if (this.config.sandbox_profile && platform() === 'darwin') {
+    // SANDBOX CANARY wrapping — macOS only, gated by FEATURE_SANDBOX_CANARY.
+    //
+    // Activation requires ALL THREE: a sandbox_profile, darwin, AND the
+    // FEATURE_SANDBOX_CANARY flag enabled. The flag is the master kill-switch:
+    // when it is false (default), NO agent is sandbox-wrapped regardless of its
+    // sandbox_profile, so production behaviour is byte-identical until the
+    // orchestrator activates the flag after review.
+    //
+    // Canary scope (one low-risk agent, NOT fleet-wide): once the flag is on,
+    // only agents marked sandbox_canary=true in their config are wrapped. An
+    // agent that carries a sandbox_profile but NOT sandbox_canary stays
+    // unsandboxed, so flipping the flag cannot accidentally sandbox the fleet.
+    const canaryActive =
+      isFeatureEnabled('FEATURE_SANDBOX_CANARY') &&
+      this.config.sandbox_canary === true;
+    if (this.config.sandbox_profile && canaryActive && platform() === 'darwin') {
       const agentDir = join(
         this.env.projectRoot ?? '',
         'orgs', this.env.org ?? '', 'agents', this.env.agentName ?? ''
@@ -263,6 +278,10 @@ export class AgentPTY {
         '-D', `DENY_AGENT_2=${siblingDirs[1]}`,
         '-D', `DENY_AGENT_3=${siblingDirs[2]}`,
         '-D', `DENY_AGENT_4=${siblingDirs[3]}`,
+        // FAKE_CANARY_DIR: deny-read path for the planted fake canary secret.
+        // Production launches default to the sentinel (no real path denied);
+        // the credential red-team test overrides it with the planted dir.
+        '-D', `FAKE_CANARY_DIR=${process.env.CTX_FAKE_CANARY_DIR ?? SENTINEL}`,
       ];
 
       this.pty = this.spawnFn!('sandbox-exec', [
