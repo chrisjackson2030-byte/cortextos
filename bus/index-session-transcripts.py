@@ -183,8 +183,7 @@ def main():
     if embed_py.exists() and embed_venv.exists():
         print(f"\nUpdating local semantic index ({embed_py.name})...")
         result = subprocess.run(
-            [str(embed_venv), str(embed_py), "index", "--agent", agent_name,
-             "--max-mb", "10"],
+            [str(embed_venv), str(embed_py), "index", "--agent", agent_name],
             capture_output=True, text=True, timeout=600
         )
         if result.returncode == 0:

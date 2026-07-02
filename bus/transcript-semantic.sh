@@ -6,6 +6,7 @@
 #
 # Usage:
 #   transcript-semantic.sh search "<query>" [--k N] [--json]
+#   transcript-semantic.sh recall "<query>" [--k N] [--json]
 #   transcript-semantic.sh index  [--limit N] [--max-mb MB] [--force]
 #   transcript-semantic.sh stats
 set -euo pipefail

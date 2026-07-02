@@ -434,6 +434,17 @@ def get_reflexes(framework_root: str, agent_name: str, org: str) -> str:
         return ""
 
 
+def get_skill_router(framework_root: str, agent_name: str, org: str) -> str:
+    """Read the Jarvis-owned skill trigger map so task-start skill choices surface at
+    DECISION time, same as reflexes. Fix for hand-rolling work already covered by
+    skills (B directive 2026-06-22). Fails soft."""
+    p = Path(framework_root) / "orgs" / org / "agents" / agent_name / "memory" / "skill-router.md"
+    try:
+        return p.read_text(errors="ignore").strip() if p.is_file() else ""
+    except Exception:
+        return ""
+
+
 def generate_context(agent_name: str, org: str) -> str:
     framework_root = os.environ.get("CTX_FRAMEWORK_ROOT", str(Path.home() / "cortextos"))
     transcripts = find_transcripts(agent_name, org)
@@ -484,6 +495,14 @@ def generate_context(agent_name: str, org: str) -> str:
         lines.append(fanout_reflex)
         if reflexes:
             lines.append(reflexes)
+        lines.append("---")
+        lines.append("")
+
+    skill_router = get_skill_router(framework_root, agent_name, org)
+    if skill_router:
+        lines.append("## 🧰 Skill Router — reach for these at task start (do not hand-roll what a skill covers)")
+        lines.append("_Trigger map for skill-first execution. Before hand-rolling any task >2 steps, scan this and invoke the covering skill; if deliberately skipped, log why in daily memory._")
+        lines.append(skill_router)
         lines.append("---")
         lines.append("")
 
@@ -612,8 +631,8 @@ def write_boot_index(framework_root: str, agent_name: str, org: str, content: st
     # step — NOT guaranteed (esp. on --continue restarts), and the harness auto-loads the SHARED
     # ~/.claude index, not this one. The daemon DOES unconditionally inject {agentDir}/local/*.md
     # via --append-system-prompt every session (src/pty/agent-pty.ts). So ALSO write a COMPACT
-    # guaranteed-injected copy there: the must-never-forget sections only (reflexes + registry +
-    # killed-edges), kept small because it is appended to every system prompt.
+    # guaranteed-injected copy there: the must-never-forget sections only (reflexes + skill router +
+    # registry + killed-edges), kept small because it is appended to every system prompt.
     def _section(hdr_prefix: str) -> str:
         parts = content.split("\n## ")
         for p in parts:
@@ -627,6 +646,7 @@ def write_boot_index(framework_root: str, agent_name: str, org: str, content: st
         _section("## ⚠️ RUNTIME MISMATCH"),
         _section("## ⚙️ FLEET RUNTIME"),
         _section("## ⚡ Established Workflows / Reflexes"),
+        _section("## 🧰 Skill Router"),
         _section("## 💰 Trading Systems Registry"),
         _section("## ⛔ Strategy Verdicts / Killed Edges"),
     ] if s)

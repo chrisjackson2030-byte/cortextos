@@ -934,6 +934,36 @@ busCommand
   });
 
 busCommand
+  .command('recall')
+  .description('Hybrid local recall over transcript memory (vector + FTS5 keyword + RRF)')
+  .argument('<topic>', 'Topic or keywords to recall')
+  .option('--top-k <n>', 'Max results to return (default: 5)', '5')
+  .option('-k, --k <n>', 'Alias for --top-k')
+  .option('--json', 'Output raw JSON')
+  .action((topic: string, opts: { topK?: string; k?: string; json?: boolean }) => {
+    const env = resolveEnv();
+    const frameworkRoot = env.frameworkRoot || env.projectRoot || process.cwd();
+    const script = join(frameworkRoot, 'bus', 'transcript-semantic.sh');
+    if (!existsSync(script)) {
+      console.error(`Local recall backend not found: ${script}`);
+      process.exit(1);
+    }
+
+    const topK = opts.k || opts.topK || '5';
+    const args = ['recall', topic, '--k', topK];
+    if (opts.json) args.push('--json');
+
+    const proc = spawnSync(script, args, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    if (proc.stdout) process.stdout.write(proc.stdout);
+    if (proc.stderr) process.stderr.write(proc.stderr);
+    if (proc.status !== 0) process.exit(proc.status ?? 1);
+  });
+
+busCommand
   .command('recall-facts')
   .description('Recall recent session facts extracted at compaction time (cross-session memory)')
   .option('--days <n>', 'How many days back to scan', '3')
