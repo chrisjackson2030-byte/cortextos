@@ -263,6 +263,120 @@ def embed_content(client, config, content, task_type="RETRIEVAL_DOCUMENT"):
     return result.embeddings[0].values
 
 
+# ---------------------------------------------------------------------------
+# KB cloud circuit breaker (kb403, added 2026-07-02)
+#
+# When the Gemini cloud project is billing-suspended (403 PERMISSION_DENIED
+# "Lightning dunning decision is deny for project: projects/881974199397"),
+# every per-file embed call fails identically — one maintenance run used to
+# log 41 errors. This breaker trips on the FIRST dunning 403, aborts the rest
+# of that ingest run, and on later runs skips cloud ingest with ONE log line,
+# re-probing with a single cheap embed call at most once per 24h. On a
+# successful probe the circuit closes and ingest resumes normally. Local
+# index paths are unaffected. To force-close: delete the state file.
+# Reversible: restore mmrag.py.bak-kb403-20260702 to remove entirely.
+# ---------------------------------------------------------------------------
+CIRCUIT_STATE_FILE = Path(os.environ.get(
+    "KB_CLOUD_CIRCUIT_FILE",
+    str(Path.home() / "cortextos-data" / "state" / "kb-cloud-circuit.json"),
+))
+CIRCUIT_PROBE_INTERVAL_S = 24 * 3600
+CIRCUIT_SKIP_LINE = ("KB cloud ingest skipped: circuit open (403 dunning, "
+                     "project 881974199397); daily re-probe pending")
+CIRCUIT_TRIP_LINE = ("KB cloud ingest aborted: circuit tripped (403 dunning, "
+                     "project 881974199397); remaining files skipped this run")
+
+
+class _CircuitOpen(Exception):
+    """Raised inside cmd_ingest to abort remaining cloud ingest after a dunning 403."""
+
+
+def _circuit_now_iso():
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _circuit_parse_iso(s):
+    import datetime as _dt
+    try:
+        return _dt.datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_dt.timezone.utc)
+    except Exception:
+        return None
+
+
+def _circuit_load():
+    try:
+        with open(CIRCUIT_STATE_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _circuit_write(state):
+    try:
+        CIRCUIT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = CIRCUIT_STATE_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp, CIRCUIT_STATE_FILE)
+    except Exception as e:
+        print(f"  WARN: could not write kb-cloud-circuit state file: {e}")
+
+
+def _is_dunning_403(exc):
+    s = str(exc)
+    return ("dunning" in s.lower()) or ("PERMISSION_DENIED" in s and "403" in s)
+
+
+def _circuit_trip():
+    now = _circuit_now_iso()
+    _circuit_write({
+        "tripped": True,
+        "reason": "403 dunning project 881974199397",
+        "tripped_at": now,
+        "last_probe": now,
+    })
+
+
+def _maybe_trip_circuit(exc):
+    """On the first dunning 403 in a run: persist the trip and abort the run."""
+    if _is_dunning_403(exc):
+        _circuit_trip()
+        print(CIRCUIT_TRIP_LINE)
+        raise _CircuitOpen()
+
+
+def _circuit_should_skip(client, config):
+    """Return True if cloud ingest should be skipped this run (circuit open)."""
+    state = _circuit_load()
+    if not state or not state.get("tripped"):
+        return False
+    import datetime as _dt
+    last_probe = _circuit_parse_iso(state.get("last_probe", ""))
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if last_probe and (now - last_probe).total_seconds() < CIRCUIT_PROBE_INTERVAL_S:
+        print(CIRCUIT_SKIP_LINE)
+        return True
+    # Probe window elapsed: ONE cheap embed call decides open vs closed.
+    try:
+        embed_content(client, config, "kb-cloud-circuit probe")
+        _circuit_write({
+            "tripped": False,
+            "reason": "probe succeeded",
+            "tripped_at": state.get("tripped_at"),
+            "last_probe": _circuit_now_iso(),
+        })
+        print("KB cloud circuit closed: probe succeeded; resuming cloud ingest")
+        return False
+    except Exception as e:
+        state["last_probe"] = _circuit_now_iso()
+        if not _is_dunning_403(e):
+            state["reason"] = f"probe failed: {str(e)[:200]}"
+        _circuit_write(state)
+        print(CIRCUIT_SKIP_LINE)
+        return True
+
+
 def embed_multimodal(client, config, description_text, media_bytes, mime_type):
     """
     Option B embedding: combine text description + raw media into one embedding.
@@ -1075,6 +1189,12 @@ def cmd_ingest(args):
     config = load_config()
     client = get_genai_client(get_api_key(config))
     collection_name = args.collection or config.get("default_collection", "default")
+
+    # kb403 circuit breaker: if the cloud project is billing-suspended, skip
+    # the entire cloud ingest with one line (daily single-call re-probe).
+    if _circuit_should_skip(client, config):
+        return
+
     collection = get_chroma_collection(collection_name)
 
     if args_force:
@@ -1102,6 +1222,7 @@ def cmd_ingest(args):
                     except Exception as e:
                         print(f"    ERROR: {e}")
                         errors += 1
+                        _maybe_trip_circuit(e)  # kb403: first dunning 403 aborts the run
             elif p.is_file():
                 print(f"Ingesting: {p.name}")
                 try:
@@ -1112,8 +1233,11 @@ def cmd_ingest(args):
                 except Exception as e:
                     print(f"  ERROR: {e}")
                     errors += 1
+                    _maybe_trip_circuit(e)  # kb403: first dunning 403 aborts the run
             else:
                 print(f"NOT FOUND: {p}")
+    except _CircuitOpen:
+        pass  # kb403: circuit tripped mid-run; summary below shows the single error
     finally:
         _tracker.persist()
 
