@@ -1,11 +1,12 @@
 /**
  * WS7 fast-path auto-ack unit tests.
  *
- * Verifies FastChecker.maybeAutoAck() behavior:
- *   1. Fires when isBusy=true
- *   2. Does NOT fire when isBusy=false
- *   3. Dedups: only one ack per busy-window (30s default)
- *   4. Sends ack again after the dedup window expires
+ * DISABLED behavior contract (B 2026-06-21): maybeAutoAck() is a permanent
+ * no-op. The pre-emptive "received, on it" ack became noise because the agent
+ * replies for real within seconds. These tests pin the no-op contract:
+ *   1. NEVER sends a Telegram message, busy or idle
+ *   2. ALWAYS returns false
+ *   3. Call site remains safe (no throw), including rapid repeated calls
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync } from 'fs';
@@ -77,11 +78,10 @@ describe('FastChecker.maybeAutoAck (WS7 fast-path auto-ack)', () => {
     vi.clearAllMocks();
   });
 
-  it('sends ack and returns true when agent is busy', () => {
+  it('does NOT send ack and returns false when agent is busy (disabled per B 2026-06-21)', () => {
     const sent = checker.maybeAutoAck(true, api, '12345');
-    expect(sent).toBe(true);
-    expect(api.sendMessage).toHaveBeenCalledOnce();
-    expect(api.sendMessage).toHaveBeenCalledWith('12345', 'received, on it');
+    expect(sent).toBe(false);
+    expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
   it('does NOT send ack and returns false when agent is idle', () => {
@@ -90,39 +90,30 @@ describe('FastChecker.maybeAutoAck (WS7 fast-path auto-ack)', () => {
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('dedups: second call within window does NOT send another ack', () => {
-    const first = checker.maybeAutoAck(true, api, '12345');
-    const second = checker.maybeAutoAck(true, api, '12345');
-    expect(first).toBe(true);
-    expect(second).toBe(false);
-    expect(api.sendMessage).toHaveBeenCalledOnce();
-  });
-
-  it('dedups multiple rapid calls to a single ack', () => {
+  it('never sends an ack across rapid repeated busy calls', () => {
     for (let i = 0; i < 5; i++) {
-      checker.maybeAutoAck(true, api, '12345');
+      expect(checker.maybeAutoAck(true, api, '12345')).toBe(false);
     }
-    expect(api.sendMessage).toHaveBeenCalledOnce();
+    expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('sends a fresh ack after the dedup window expires', () => {
-    // Use a 0ms window so the second call fires immediately
+  it('never sends an ack even with a 0ms dedup window', () => {
     checker.maybeAutoAck(true, api, '12345', 0);
     checker.maybeAutoAck(true, api, '12345', 0);
-    expect(api.sendMessage).toHaveBeenCalledTimes(2);
+    expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('idle call between busy calls does not reset the dedup window', () => {
-    checker.maybeAutoAck(true, api, '12345');   // fires
-    checker.maybeAutoAck(false, api, '12345');  // idle — skipped
-    checker.maybeAutoAck(true, api, '12345');   // still within window — skipped
-    expect(api.sendMessage).toHaveBeenCalledOnce();
+  it('mixed busy/idle call sequence sends nothing', () => {
+    checker.maybeAutoAck(true, api, '12345');
+    checker.maybeAutoAck(false, api, '12345');
+    checker.maybeAutoAck(true, api, '12345');
+    expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('swallows sendMessage rejections without throwing', async () => {
+  it('call site remains safe: no throw even if sendMessage would reject', async () => {
     api.sendMessage.mockRejectedValue(new Error('network error'));
     expect(() => checker.maybeAutoAck(true, api, '12345')).not.toThrow();
-    // allow the rejected promise to settle without crashing
+    // allow any (unexpected) rejected promise to settle without crashing
     await new Promise(resolve => setTimeout(resolve, 10));
   });
 });

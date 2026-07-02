@@ -1266,18 +1266,15 @@ Reply using: cortextos bus send-telegram ${chatId} '<your reply>'
    * Failures from sendMessage are swallowed — the ack is best-effort.
    */
   maybeAutoAck(
-    isBusy: boolean,
-    api: TelegramAPI,
-    chatId: string,
-    dedupeWindowMs: number = 30_000,
+    _isBusy: boolean,
+    _api: TelegramAPI,
+    _chatId: string,
+    _dedupeWindowMs: number = 30_000,
   ): boolean {
-    if (!isBusy) return false;
-    const now = Date.now();
-    if (now - this.lastAutoAckAt < dedupeWindowMs) return false;
-    this.lastAutoAckAt = now;
-    api.sendMessage(chatId, 'received, on it').catch(() => {});
-    this.log('Auto-ack sent (agent busy mid-turn)');
-    return true;
+    // DISABLED 2026-06-21 (B): the "received, on it" auto-ack became noise. B
+    // gets a real reply from the agent within seconds, so the pre-emptive ack
+    // was redundant and annoying. Kept as a no-op so the call site is unchanged.
+    return false;
   }
 
   /**
