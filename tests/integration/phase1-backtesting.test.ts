@@ -580,15 +580,16 @@ describe('Scenario 5: Concurrent cron fires', () => {
     const firedNames: string[] = [];
     const logs: string[] = [];
 
-    // All 5 crons share "*/5 * * * *" — they all fire at the same tick.
-    // Use a 1h interval instead so we control exactly when they fire.
-    // Give them all the same schedule and the same last_fired_at (25h ago)
-    // so they all catch-up fire on the first tick.
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // seeding overdue crons no longer yields same-minute fires. To preserve
+    // this test's intent (5 crons all due at the SAME minute firing within one
+    // tick), seed last_fired_at = now so all 5 become due at now + 1h —
+    // regular (non-catch-up) due fires are processed together in one tick.
     const cronNames = ['cron-a', 'cron-b', 'cron-c', 'cron-d', 'cron-e'];
-    const lastFired = new Date(Date.now() - 25 * ONE_HOUR).toISOString();
+    const lastFired = new Date(Date.now()).toISOString();
 
     for (const name of cronNames) {
-      addCron(agent, makeCronDef(name, '24h', { last_fired_at: lastFired }));
+      addCron(agent, makeCronDef(name, '1h', { last_fired_at: lastFired }));
     }
 
     // Synchronous fire callback — no internal timers so all 5 process cleanly
@@ -600,9 +601,9 @@ describe('Scenario 5: Concurrent cron fires', () => {
     const s = buildScheduler(agent, onFire, logs);
     s.start();
 
-    // First tick: all 5 crons have nextFireAt = now (catch-up), so all 5 fire
-    // sequentially within the single tick() iteration.
-    await vi.advanceTimersByTimeAsync(TICK_MS + 1_000);
+    // Advance to the shared due time (now + 1h): all 5 crons become due at the
+    // same minute and fire sequentially within the single tick() iteration.
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 1_000);
 
     s.stop();
 

@@ -667,8 +667,17 @@ describe('FM-5: Catch-up storm — 100+ overdue crons, bounded + no tick drift',
 
     scheduler.start();
 
-    // Advance by 2 ticks (30s × 2 = 1 min) — enough for all catch-up fires
+    // WS6.5 (commit ae9d6db) staggers overdue catch-up fires one slot per 30s
+    // tick, so 100 overdue crons drain across ~100 ticks instead of storming
+    // the agent in tick 1. First pin the storm cap: after 2 ticks at most the
+    // first 3 slots (0, 1, 2) have fired.
     await vi.advanceTimersByTimeAsync(2 * TICK_MS);
+    let earlyFires = 0;
+    for (const [, count] of fired) earlyFires += count;
+    expect(earlyFires).toBeLessThanOrEqual(3); // bounded — no catch-up storm
+
+    // Then advance through the full stagger window — every cron drains.
+    await vi.advanceTimersByTimeAsync(CRON_COUNT * TICK_MS);
 
     // All 100 crons fired exactly once (catch-up)
     let totalFires = 0;
@@ -709,12 +718,16 @@ describe('FM-5: Catch-up storm — 100+ overdue crons, bounded + no tick drift',
 
   it('50 crons with slow PTY (5ms each): tick latency stays under TICK_INTERVAL_MS', async () => {
     // Quantifies the sequential-fire drift concern from architectural finding AF-2.
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // seed last_fired_at = now instead: all 50 crons become due at now + 1h and
+    // fire sequentially within a SINGLE tick — the intra-tick latency this test
+    // quantifies (regular due fires are not staggered).
     const agent = 'fm-slow-pty';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    const seedTime = new Date(Date.now()).toISOString();
     for (let i = 0; i < 50; i++) {
-      addCron(agent, makeCronDef(`slow-${i}`, '1h', { last_fired_at: pastTime }));
+      addCron(agent, makeCronDef(`slow-${i}`, '1h', { last_fired_at: seedTime }));
     }
 
     let callCount = 0;
@@ -725,7 +738,7 @@ describe('FM-5: Catch-up storm — 100+ overdue crons, bounded + no tick drift',
     });
 
     scheduler.start();
-    await vi.advanceTimersByTimeAsync(TICK_MS + 50 * 5 + 1000);
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 50 * 5 + 1000);
 
     // All 50 crons fired
     expect(callCount).toBe(50);
@@ -1180,13 +1193,17 @@ describe('AF-1: lastGoodSchedule — transient corruption keeps crons firing', (
 // ---------------------------------------------------------------------------
 
 describe('AF-2: Sequential fire under slow PTY — drift quantification', () => {
+  // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+  // these tests seed last_fired_at = now: all crons become due at now + 1h and
+  // fire sequentially within a SINGLE tick — the intra-tick drift this
+  // describe-block quantifies (regular due fires are not staggered).
   it('10 crons × 10ms PTY delay: all fire within 2 ticks', async () => {
     const agent = 'af-drift-10';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    const seedTime = new Date(Date.now()).toISOString();
     for (let i = 0; i < 10; i++) {
-      addCron(agent, makeCronDef(`drift-${i}`, '1h', { last_fired_at: pastTime }));
+      addCron(agent, makeCronDef(`drift-${i}`, '1h', { last_fired_at: seedTime }));
     }
 
     let callCount = 0;
@@ -1196,7 +1213,7 @@ describe('AF-2: Sequential fire under slow PTY — drift quantification', () => 
     });
 
     scheduler.start();
-    await vi.advanceTimersByTimeAsync(2 * TICK_MS + 10 * 10 + 1000);
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + 2 * TICK_MS + 10 * 10 + 1000);
 
     expect(callCount).toBe(10);
     // 10 × 10ms = 100ms total tick latency — well under 30s TICK_INTERVAL_MS
@@ -1207,9 +1224,9 @@ describe('AF-2: Sequential fire under slow PTY — drift quantification', () => 
     const agent = 'af-drift-50';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    const seedTime = new Date(Date.now()).toISOString();
     for (let i = 0; i < 50; i++) {
-      addCron(agent, makeCronDef(`drift50-${i}`, '1h', { last_fired_at: pastTime }));
+      addCron(agent, makeCronDef(`drift50-${i}`, '1h', { last_fired_at: seedTime }));
     }
 
     let callCount = 0;
@@ -1219,7 +1236,7 @@ describe('AF-2: Sequential fire under slow PTY — drift quantification', () => 
     });
 
     scheduler.start();
-    await vi.advanceTimersByTimeAsync(2 * TICK_MS + 50 * 10 + 2000);
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + 2 * TICK_MS + 50 * 10 + 2000);
 
     expect(callCount).toBe(50);
     // 50 × 10ms = 500ms — still well under TICK_INTERVAL_MS (30s)
@@ -1234,9 +1251,9 @@ describe('AF-2: Sequential fire under slow PTY — drift quantification', () => 
     const agent = 'af-drift-100';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    const seedTime = new Date(Date.now()).toISOString();
     for (let i = 0; i < 100; i++) {
-      addCron(agent, makeCronDef(`drift100-${i}`, '1h', { last_fired_at: pastTime }));
+      addCron(agent, makeCronDef(`drift100-${i}`, '1h', { last_fired_at: seedTime }));
     }
 
     let callCount = 0;
@@ -1246,8 +1263,8 @@ describe('AF-2: Sequential fire under slow PTY — drift quantification', () => 
     });
 
     scheduler.start();
-    // 100 × 10ms = 1s; advance 3 ticks to ensure all fire
-    await vi.advanceTimersByTimeAsync(3 * TICK_MS + 100 * 10 + 3000);
+    // 100 × 10ms = 1s; advance to the 1h due mark + 3 ticks to ensure all fire
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + 3 * TICK_MS + 100 * 10 + 3000);
 
     expect(callCount).toBe(100);
     scheduler.stop();

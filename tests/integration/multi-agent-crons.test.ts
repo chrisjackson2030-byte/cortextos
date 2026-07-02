@@ -864,8 +864,12 @@ describe('Scenario 7: Concurrent scheduler ticks don\'t corrupt crons.json', () 
   });
 
   it('5 agents each with 3 crons firing at same simulated minute: no lost updates', async () => {
-    // Every cron starts 25h overdue so all 15 catch-up fire on tick 1
-    const pastFiredAt = new Date(Date.now() - 25 * ONE_HOUR).toISOString();
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // seeding crons as overdue no longer produces same-minute fires. To keep
+    // this test's intent (15 crons across 5 agents firing in the SAME tick),
+    // seed last_fired_at = now so every cron becomes due at now + 1h, then
+    // advance past that shared due time — regular due fires are NOT staggered.
+    const seedFiredAt = new Date(Date.now()).toISOString();
 
     const testAgents = ['conc-a', 'conc-b', 'conc-c', 'conc-d', 'conc-e'] as const;
     const cronNamesPerAgent = ['alpha', 'beta', 'gamma'];
@@ -876,10 +880,10 @@ describe('Scenario 7: Concurrent scheduler ticks don\'t corrupt crons.json', () 
         addCron(agentName, {
           name: cronName,
           prompt: `Concurrent cron ${cronName} for ${agentName}`,
-          schedule: '24h',
+          schedule: '1h',
           enabled: true,
           created_at: new Date().toISOString(),
-          last_fired_at: pastFiredAt,
+          last_fired_at: seedFiredAt,
         });
       }
     }
@@ -899,8 +903,9 @@ describe('Scenario 7: Concurrent scheduler ticks don\'t corrupt crons.json', () 
       schedulers.push(s);
     }
 
-    // One tick: all 5 schedulers fire all 3 crons concurrently
-    await vi.advanceTimersByTimeAsync(TICK_MS + 2_000);
+    // Advance to the shared due time (now + 1h): all 5 schedulers fire all 3
+    // crons concurrently in the tick at the 1h mark.
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 2_000);
 
     schedulers.forEach(s => s.stop());
 
@@ -915,7 +920,7 @@ describe('Scenario 7: Concurrent scheduler ticks don\'t corrupt crons.json', () 
       expect(crons, `${agentName}: still 3 crons after concurrent tick`).toHaveLength(3);
       for (const c of crons) {
         expect(c.fire_count, `${agentName}/${c.name}: fire_count=1`).toBe(1);
-        expect(c.last_fired_at, `${agentName}/${c.name}: last_fired_at updated`).not.toBe(pastFiredAt);
+        expect(c.last_fired_at, `${agentName}/${c.name}: last_fired_at updated`).not.toBe(seedFiredAt);
       }
     }
   });

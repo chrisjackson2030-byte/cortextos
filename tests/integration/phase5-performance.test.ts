@@ -262,34 +262,38 @@ describe('P-2: Fire latency — due cron fires within 1 min of schedule', () => 
     const agent = 'p2-latency';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // overdue seeding no longer measures normal fire latency. Seed
+    // last_fired_at = now - 45s instead: all 10 crons become due at the same
+    // future instant (now + 1h - 45s, deliberately mid-tick so measured
+    // latency is non-zero) and fire on the first tick at/after that instant.
+    const seedTime = new Date(Date.now() - 45_000).toISOString();
 
-    // Load 10 crons that are all overdue
     for (let i = 0; i < 10; i++) {
       writeCrons(
         agent,
         [
           ...(readCrons(agent)),
-          makeCronDef(`lat-cron-${i}`, '1h', { last_fired_at: pastTime }),
+          makeCronDef(`lat-cron-${i}`, '1h', { last_fired_at: seedTime }),
         ],
       );
     }
 
     const fireEvents: { name: string; delayMs: number }[] = [];
-    const startFakeTime = Date.now();
+    const dueAtMs = Date.now() - 45_000 + ONE_HOUR; // shared due time
 
     const scheduler = new CronScheduler({
       agentName: agent,
       onFire: async (c) => {
-        fireEvents.push({ name: c.name, delayMs: Date.now() - startFakeTime });
+        fireEvents.push({ name: c.name, delayMs: Date.now() - dueAtMs });
       },
       logger: () => { /* silent */ },
     });
 
     scheduler.start();
 
-    // Advance one full tick (30s) — all overdue crons should fire
-    await vi.advanceTimersByTimeAsync(TICK_MS + 1000);
+    // Advance to the due time + one full tick (30s) — all 10 crons should fire
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 1000);
     scheduler.stop();
 
     const allFired = fireEvents.length;
@@ -460,11 +464,15 @@ describe('P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simu
     const agent = 'p5-concurrent-100';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // overdue seeding no longer yields 100 simultaneous fires. Seed
+    // last_fired_at = now: all 100 crons become due at now + 1h and fire
+    // within the single tick at that mark (regular due fires are not staggered).
+    const seedTime = new Date(Date.now()).toISOString();
     const crons = generateCrons(agent, 100).map(c => ({
       ...c as Record<string, unknown>,
       schedule: '1h',
-      last_fired_at: pastTime,
+      last_fired_at: seedTime,
     })) as Parameters<typeof writeCrons>[1];
     writeCrons(agent, crons);
 
@@ -484,15 +492,15 @@ describe('P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simu
       logger: () => { /* silent */ },
     });
 
-    const scheduleStart = Date.now(); // fake-timer baseline
+    const dueAtMs = Date.now() + ONE_HOUR; // shared due time = simulated schedule slot
     scheduler.start();
 
-    // Advance one full tick: all 100 overdue crons should fire sequentially
-    // (no PTY delay — near-instant callbacks).
-    await vi.advanceTimersByTimeAsync(TICK_MS + 500);
+    // Advance to the shared due time + one full tick: all 100 due crons fire
+    // sequentially within that tick (no PTY delay — near-instant callbacks).
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 500);
     scheduler.stop();
 
-    const simElapsedMs = lastFireSimMs - scheduleStart;
+    const simElapsedMs = lastFireSimMs - dueAtMs;
 
     // Real-time overhead measurement (separate concern from spec)
     // We don't assert on wall-clock here — only on simulated time.
@@ -524,11 +532,15 @@ describe('P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simu
     const agent = 'p5-slow-pty-100';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // seed last_fired_at = now: all 100 crons become due at now + 1h and fire
+    // sequentially within the tick at that mark (regular due fires are not
+    // staggered) — the intra-tick sequential latency this test measures.
+    const seedTime = new Date(Date.now()).toISOString();
     const crons = generateCrons(agent, 100).map(c => ({
       ...c as Record<string, unknown>,
       schedule: '1h',
-      last_fired_at: pastTime,
+      last_fired_at: seedTime,
     })) as Parameters<typeof writeCrons>[1];
     writeCrons(agent, crons);
 
@@ -549,15 +561,15 @@ describe('P-5: Concurrent fires — 100 simultaneous crons succeed in <30s (simu
       logger: () => { /* silent */ },
     });
 
-    const scheduleStart = Date.now();
+    const dueAtMs = Date.now() + ONE_HOUR; // shared due time = simulated schedule slot
     scheduler.start();
 
     // 100 × 10ms = 1s of sequential tick latency.
-    // Advance 3 ticks + extra buffer to ensure all fires complete (sequential).
-    await vi.advanceTimersByTimeAsync(3 * TICK_MS + 100 * 10 + 5000);
+    // Advance to the due time + 3 ticks + buffer to ensure all fires complete.
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + 3 * TICK_MS + 100 * 10 + 5000);
     scheduler.stop();
 
-    const simElapsedMs = lastFireSimMs - scheduleStart;
+    const simElapsedMs = lastFireSimMs - dueAtMs;
 
     // Sequential latency: 100 crons × 10ms = 1000ms of intra-tick fire time.
     // The tick fires at the 30s mark; the last cron finishes ~1s later (within same tick pass).
@@ -734,11 +746,16 @@ describe('SC-2: Scaling cliff — sequential fire drift at 1000 crons × 10ms PT
     const agent = 'sc2-drift-1000';
     ensureAgentDir(agent);
 
-    const pastTime = new Date(Date.now() - 2 * ONE_HOUR).toISOString();
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick
+    // (1000 overdue crons would drain over ~8.3 simulated hours). Seed
+    // last_fired_at = now instead: all 1000 crons become due at now + 1h and
+    // fire sequentially within the same tick pass — the sequential-drift
+    // cliff this probe documents (regular due fires are not staggered).
+    const seedTime = new Date(Date.now()).toISOString();
     const crons = generateCrons(agent, 1000).map(c => ({
       ...c as Record<string, unknown>,
       schedule: '1h',
-      last_fired_at: pastTime,
+      last_fired_at: seedTime,
     })) as Parameters<typeof writeCrons>[1];
     writeCrons(agent, crons);
 
@@ -756,12 +773,12 @@ describe('SC-2: Scaling cliff — sequential fire drift at 1000 crons × 10ms PT
     scheduler.start();
 
     // 1000 × 10ms = 10s total sequential latency.
-    // Need enough fake-time ticks to let all 1000 fire.
-    // Each tick is 30s; each tick fires as many as it can sequentially.
-    // With 1000 × 10ms = 10s per tick, all 1000 could theoretically fire in 1 tick.
-    // We allow 5 ticks + buffer to be safe.
+    // Advance to the shared due time (now + 1h), then enough fake-time ticks
+    // to let all 1000 fire. Each tick is 30s; each tick fires as many as it
+    // can sequentially. With 1000 × 10ms = 10s per tick, all 1000 could
+    // theoretically fire in 1 tick. We allow 5 ticks + buffer to be safe.
     const t0 = performance.now();
-    await vi.advanceTimersByTimeAsync(5 * TICK_MS + 1000 * 10 + 10_000);
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + 5 * TICK_MS + 1000 * 10 + 10_000);
     const wallMs = performance.now() - t0;
     scheduler.stop();
 

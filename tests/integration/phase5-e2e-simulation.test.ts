@@ -492,8 +492,11 @@ describe('Scenario 3: Agent crash — PTY unavailable, graceful failure, recover
     const s = buildScheduler(agent, onFire, logs);
     s.start();
 
-    // Phase 1: agent running — all 3 crons catch up and fire
-    await vi.advanceTimersByTimeAsync(TICK_MS);
+    // Phase 1: agent running — all 3 crons catch up and fire.
+    // WS6.5 (commit ae9d6db) staggers overdue catch-up fires one slot per
+    // 30s tick, so the 3 crons land across 2 ticks (slots 0+1 in tick 1,
+    // slot 2 in tick 2) — advance 2 ticks to cover the stagger window.
+    await vi.advanceTimersByTimeAsync(2 * TICK_MS);
     // Drive all retry paths to completion (1s + 4s + 16s)
     await vi.advanceTimersByTimeAsync(22_000);
 
@@ -835,8 +838,9 @@ describe('Scenario 5: PTY degradation — slow injection, intermittent failure, 
     const s = buildScheduler(agent, slowFire, logs);
     s.start();
 
-    // Advance TICK_MS + extra to let all 3 slow fires complete
-    await vi.advanceTimersByTimeAsync(TICK_MS + 1_000);
+    // Advance past the WS6.5 catch-up stagger window (3 overdue crons =
+    // slots 0..2 spread across 2 ticks) + extra for the 200ms slow fires.
+    await vi.advanceTimersByTimeAsync(3 * TICK_MS + 1_000);
 
     s.stop();
 
@@ -1021,9 +1025,12 @@ describe('Scenario 6: Concurrent stress — 10 crons fire simultaneously, no rac
     for (const { agent, names } of agentDefs) {
       ensureAgentDir(agent);
       for (const name of names) {
-        // All 10 crons have last_fired_at 90min ago — all catch up on first tick simultaneously
+        // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick,
+        // so overdue seeding no longer produces simultaneous fires. Seed
+        // last_fired_at = now instead: all 10 crons become due at now + 1h and
+        // fire simultaneously in that tick (regular due fires are not staggered).
         addCron(agent, makeCronDef(name, '1h', {
-          last_fired_at: new Date(Date.now() - 90 * ONE_MIN).toISOString(),
+          last_fired_at: new Date(Date.now()).toISOString(),
         }));
       }
     }
@@ -1043,9 +1050,9 @@ describe('Scenario 6: Concurrent stress — 10 crons fire simultaneously, no rac
     // Start all schedulers — they all process their first tick concurrently
     schedulers.forEach(s => s.start());
 
-    // Single tick: all 10 crons should fire within this tick
-    // The scheduler processes all due crons in one tick() call
-    await vi.advanceTimersByTimeAsync(TICK_MS + 1_000);
+    // Advance to the shared due time (now + 1h): all 10 crons fire within the
+    // tick at the 1h mark — the scheduler processes all due crons in one tick() call
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 1_000);
 
     schedulers.forEach(s => s.stop());
 
@@ -1095,15 +1102,18 @@ describe('Scenario 6: Concurrent stress — 10 crons fire simultaneously, no rac
     const namesA = ['ba1', 'ba2', 'ba3', 'ba4', 'ba5'];
     const namesB = ['bb1', 'bb2', 'bb3', 'bb4', 'bb5'];
 
+    // WS6.5 (commit ae9d6db) staggers OVERDUE catch-up fires one-per-tick, so
+    // seed last_fired_at = now: burst 1 lands simultaneously at now + 1h and
+    // burst 2 at now + 2h (regular due fires are not staggered).
     for (const agent of agentNames) ensureAgentDir(agent);
     for (const name of namesA) {
       addCron('burst-a', makeCronDef(name, '1h', {
-        last_fired_at: new Date(Date.now() - 90 * ONE_MIN).toISOString(),
+        last_fired_at: new Date(Date.now()).toISOString(),
       }));
     }
     for (const name of namesB) {
       addCron('burst-b', makeCronDef(name, '1h', {
-        last_fired_at: new Date(Date.now() - 90 * ONE_MIN).toISOString(),
+        last_fired_at: new Date(Date.now()).toISOString(),
       }));
     }
 
@@ -1114,8 +1124,8 @@ describe('Scenario 6: Concurrent stress — 10 crons fire simultaneously, no rac
     sA.start();
     sB.start();
 
-    // First burst: all 10 fire on tick 1
-    await vi.advanceTimersByTimeAsync(TICK_MS + 1_000);
+    // First burst: all 10 fire together in the tick at the 1h due mark
+    await vi.advanceTimersByTimeAsync(ONE_HOUR + TICK_MS + 1_000);
     expect(totalFired).toHaveLength(10);
 
     // Advance 1h — all 10 should fire again in next tick
