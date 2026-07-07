@@ -16,6 +16,9 @@ export default defineConfig({
   test: {
     globals: true,
     testTimeout: 10000,
+    // Strip ambient CTX_* env leaked from a live agent shell so the suite is
+    // hermetic regardless of where `npm test` is launched. See tests/setup/hermetic-env.ts.
+    setupFiles: ['tests/setup/hermetic-env.ts'],
     include: [
       'tests/**/*.test.ts',
       'dashboard/src/**/__tests__/**/*.test.ts',
